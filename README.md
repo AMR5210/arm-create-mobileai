@@ -37,6 +37,26 @@ scripts/download_model.py     # downloads the base model (Qwen3-0.6B by default)
 scripts/prepare_eval_data.py  # prepares WikiText-2 perplexity corpus + instruction-eval slice
 ```
 
+## Benchmark suite
+
+Every model variant (fp16 baseline, PTQ-2bit, QAT-2bit) is measured with the same harness, so numbers are directly comparable across variants:
+
+```bash
+# 1. Convert a Hugging Face checkpoint to fp16 GGUF (the common base for all variants)
+scripts/convert_to_gguf.sh models/qwen3-0.6b-hf models/qwen3-0.6b-fp16.gguf
+
+# 2. Run the full benchmark suite: disk size, peak RAM, tokens/sec, perplexity, instruction accuracy
+python scripts/benchmark.py \
+  --tag baseline-fp16 \
+  --device "iPhone 17 Pro Max" \
+  --model models/qwen3-0.6b-fp16.gguf
+
+# 3. Combine every results/*.json into one comparison table
+python scripts/summarize_results.py
+```
+
+`--device` matters: only iPhone-class runs are reported as final numbers; runs on the development machine are for pipeline validation only, not for the submission's benchmark table.
+
 ## Hardware notes
 
 - Reported benchmark numbers are collected on real Arm mobile hardware (phone/tablet/laptop class), per the target track's requirements, not on desktop hardware.
