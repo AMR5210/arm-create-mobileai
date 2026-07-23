@@ -58,7 +58,16 @@ python scripts/benchmark.py \
   --device "iPhone 17 Pro Max" \
   --model models/qwen3-0.6b-ptq-q2_k.gguf
 
-# 4. Combine every results/*.json into one comparison table
+# 4. QAT fine-tune (runs on a GPU instance, not the dev machine) then export
+#    to the same GGUF Q2_K format as the PTQ baseline
+python scripts/train_qat.py --base-model models/qwen3-0.6b-hf --output-dir models/qwen3-0.6b-qat-hf
+scripts/export_qat_gguf.sh models/qwen3-0.6b-qat-hf
+python scripts/benchmark.py \
+  --tag qat-2bit \
+  --device "iPhone 17 Pro Max" \
+  --model models/qwen3-0.6b-qat-q2_k.gguf
+
+# 5. Combine every results/*.json into one comparison table
 python scripts/summarize_results.py
 ```
 
