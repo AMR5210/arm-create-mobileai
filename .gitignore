@@ -1,0 +1,32 @@
+# Claude Code project state (settings.json is tracked project policy, not personal config)
+.claude/*
+!.claude/settings.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Model weights & derived data artifacts (large binaries, not tracked)
+models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# llama.cpp checkout (cloned by scripts/build_llama_cpp.sh, not vendored)
+third_party/
+
+# Generated eval data (reproducible from scripts/prepare_eval_data.py)
+eval/data/*
+!eval/data/.gitkeep
+
+# Benchmark outputs
+results/*
+!results/.gitkeep
+
+# OS
+.DS_Store

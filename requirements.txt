@@ -1,0 +1,8 @@
+torch>=2.2
+transformers>=4.44
+accelerate>=0.33
+datasets>=2.20
+huggingface_hub>=0.24
+sentencepiece>=0.2.0
+protobuf>=4.25
+tqdm>=4.66
