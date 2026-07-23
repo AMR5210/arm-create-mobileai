@@ -25,6 +25,22 @@ def load_alpaca_examples(max_examples: int = 2000, seed: int = 0, dataset_name: 
     return ds.select(range(min(max_examples, len(ds))))
 
 
+def _common_prefix_len(a: list[int], b: list[int]) -> int:
+    """Length of the matching prefix of two token-id sequences.
+
+    Tokenizing the prompt alone is not guaranteed to be an exact prefix of
+    tokenizing prompt+response together -- BPE-style tokenizers can merge
+    differently right at the boundary. Using the actual common prefix (rather
+    than just trusting len(tokenized_prompt)) keeps the prompt/response split
+    correct regardless of where such a boundary mismatch occurs.
+    """
+    n = min(len(a), len(b))
+    for i in range(n):
+        if a[i] != b[i]:
+            return i
+    return n
+
+
 def build_supervised_example(example: dict, tokenizer, max_length: int = 512) -> dict:
     """Tokenizes prompt+response, masking the prompt portion out of the loss
     (label = -100) so the model is only trained to produce the response.
@@ -38,7 +54,7 @@ def build_supervised_example(example: dict, tokenizer, max_length: int = 512) ->
 
     input_ids = tokenized_full["input_ids"]
     labels = list(input_ids)
-    prompt_len = min(len(tokenized_prompt["input_ids"]), len(labels))
+    prompt_len = _common_prefix_len(input_ids, tokenized_prompt["input_ids"])
     for i in range(prompt_len):
         labels[i] = -100
 
