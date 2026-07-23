@@ -45,13 +45,20 @@ Every model variant (fp16 baseline, PTQ-2bit, QAT-2bit) is measured with the sam
 # 1. Convert a Hugging Face checkpoint to fp16 GGUF (the common base for all variants)
 scripts/convert_to_gguf.sh models/qwen3-0.6b-hf models/qwen3-0.6b-fp16.gguf
 
-# 2. Run the full benchmark suite: disk size, peak RAM, tokens/sec, perplexity, instruction accuracy
+# 2. Benchmark the fp16 baseline
 python scripts/benchmark.py \
   --tag baseline-fp16 \
   --device "iPhone 17 Pro Max" \
   --model models/qwen3-0.6b-fp16.gguf
 
-# 3. Combine every results/*.json into one comparison table
+# 3. Post-training quantize to 2-bit (Q2_K) and benchmark it the same way
+scripts/quantize_ptq.sh models/qwen3-0.6b-fp16.gguf models/qwen3-0.6b-ptq-q2_k.gguf
+python scripts/benchmark.py \
+  --tag ptq-2bit \
+  --device "iPhone 17 Pro Max" \
+  --model models/qwen3-0.6b-ptq-q2_k.gguf
+
+# 4. Combine every results/*.json into one comparison table
 python scripts/summarize_results.py
 ```
 
