@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from qat.apply_qat import apply_qat, materialize_qat  # noqa: E402
+from qat.apply_qat import apply_qat, fake_quantized_state_dict, materialize_qat  # noqa: E402
 from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
 from qat.eval_utils import compute_perplexity  # noqa: E402
 
@@ -50,7 +50,23 @@ def main() -> None:
         "reported in the submission comes from llama-perplexity on the "
         "exported GGUF, over the full corpus.",
     )
+    parser.add_argument(
+        "--save-every",
+        type=int,
+        default=100,
+        help="Every N steps, saves a non-destructive safety-net checkpoint "
+        "(weights only, no optimizer state) to --checkpoint-dir, so an "
+        "interrupted session (e.g. a Colab disconnect) doesn't lose all "
+        "training progress. Set to 0 to disable.",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=None,
+        help="Defaults to <output-dir>-partial.",
+    )
     args = parser.parse_args()
+    checkpoint_dir = args.checkpoint_dir or args.output_dir.parent / f"{args.output_dir.name}-partial"
 
     accelerator = Accelerator()
     device = accelerator.device
@@ -84,6 +100,12 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)
 
+    if args.save_every:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        accelerator.unwrap_model(model).config.save_pretrained(checkpoint_dir)
+        tokenizer.save_pretrained(checkpoint_dir)
+        print(f"==> Safety-net checkpoints will be written to {checkpoint_dir} every {args.save_every} steps")
+
     print("==> WikiText-2 perplexity right after fake-quant wrapping (pre fine-tune)")
     ppl = compute_perplexity(model, tokenizer, args.wikitext2, device, max_eval_tokens=args.eval_max_tokens)
     print(f"    perplexity: {ppl:.4f}")
@@ -105,6 +127,11 @@ def main() -> None:
                     model, tokenizer, args.wikitext2, device, max_eval_tokens=args.eval_max_tokens
                 )
                 print(f"step {step}/{args.max_steps}  loss={loss.item():.4f}  wikitext2_ppl={ppl:.4f}")
+
+            if args.save_every and step % args.save_every == 0:
+                state_dict = fake_quantized_state_dict(accelerator.unwrap_model(model))
+                torch.save(state_dict, checkpoint_dir / "pytorch_model.bin")
+                print(f"    [checkpoint] step {step}: safety-net weights saved to {checkpoint_dir}")
 
             if step >= args.max_steps:
                 done = True

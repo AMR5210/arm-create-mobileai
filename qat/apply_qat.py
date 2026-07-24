@@ -6,8 +6,10 @@ default -- standard practice in weight-only LLM quantization (and consistent
 with llama.cpp's own Q2_K "K-quant" scheme, which keeps certain tensors at
 higher precision within a nominally-2-bit model).
 """
+import torch
 import torch.nn as nn
 
+from .fake_quant import affine_fake_quant
 from .quantized_linear import FakeQuantLinear
 
 DEFAULT_SKIP_PATTERNS = ("embed_tokens", "lm_head", "norm")
@@ -53,3 +55,32 @@ def materialize_qat(model: nn.Module) -> list[str]:
                 setattr(parent, child_name, child.materialize())
                 materialized.append(full_name)
     return materialized
+
+
+def fake_quantized_state_dict(model: nn.Module) -> dict:
+    """Returns a state dict with every FakeQuantLinear's *current*
+    fake-quantized weight baked in, WITHOUT mutating the live model (unlike
+    materialize_qat, which replaces modules in place and would silently break
+    training if you tried to keep going afterward).
+
+    Meant for periodic crash/disconnect-safe checkpointing during a long
+    training run (e.g. on a free Colab session, where disconnects are
+    common) -- safe to call mid-loop, training continues unaffected. This
+    only preserves weights, not optimizer state, so resuming from one of
+    these is a fallback ("train from this partial point" or "just export
+    what we have"), not a true training resume.
+    """
+    state_dict = {}
+    for name, module in model.named_modules():
+        if isinstance(module, FakeQuantLinear):
+            with torch.no_grad():
+                w_hat = affine_fake_quant(module.weight, module.bits, module.group_size)
+            state_dict[f"{name}.weight"] = w_hat.detach().cpu().clone()
+            if module.bias is not None:
+                state_dict[f"{name}.bias"] = module.bias.detach().cpu().clone()
+
+    for key, tensor in model.state_dict().items():
+        if key not in state_dict:
+            state_dict[key] = tensor.detach().cpu().clone()
+
+    return state_dict
