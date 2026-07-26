@@ -42,6 +42,23 @@ def apply_qat(
     return replaced
 
 
+def set_qat_bits(model: nn.Module, bits: int) -> int:
+    """Sets the forward-pass quantization bit-width on every FakeQuantLinear,
+    in place. Returns how many modules were updated.
+
+    Used to implement a progressive bit-width schedule (train at a milder
+    bit-width first, anneal down to the aggressive 2-bit target): the shadow
+    weights and their INT4 init are unchanged, only the precision simulated
+    in the forward pass changes.
+    """
+    n = 0
+    for module in model.modules():
+        if isinstance(module, FakeQuantLinear):
+            module.bits = bits
+            n += 1
+    return n
+
+
 def materialize_qat(model: nn.Module) -> list[str]:
     """Bakes every FakeQuantLinear back into a plain nn.Linear, in place.
     Call this before save_pretrained() so the checkpoint needs no custom

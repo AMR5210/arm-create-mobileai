@@ -19,19 +19,29 @@ from pathlib import Path
 import torch
 from accelerate import Accelerator
 from torch.utils.data import DataLoader
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from qat.apply_qat import apply_qat, fake_quantized_state_dict, materialize_qat  # noqa: E402
+from qat.apply_qat import apply_qat, fake_quantized_state_dict, materialize_qat, set_qat_bits  # noqa: E402
 from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
 from qat.eval_utils import compute_perplexity  # noqa: E402
+
+
+def scheduled_bits(step: int, warmup_bits: int, target_bits: int, anneal_steps: int) -> int:
+    """Forward bit-width for a given step: linearly step down from
+    warmup_bits to target_bits over anneal_steps, then hold at target.
+    """
+    if warmup_bits <= target_bits or step >= anneal_steps or anneal_steps <= 0:
+        return target_bits
+    frac = step / anneal_steps
+    return max(target_bits, round(warmup_bits - frac * (warmup_bits - target_bits)))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-model", type=Path, default=Path("models/qwen3-0.6b-hf"))
     parser.add_argument("--output-dir", type=Path, default=Path("models/qwen3-0.6b-qat-hf"))
-    parser.add_argument("--bits", type=int, default=2)
+    parser.add_argument("--bits", type=int, default=2, help="Final target bit-width.")
     parser.add_argument("--init-bits", type=int, default=4)
     parser.add_argument("--group-size", type=int, default=32)
     parser.add_argument("--dataset", default="tatsu-lab/alpaca")
@@ -41,6 +51,33 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--max-steps", type=int, default=500)
     parser.add_argument("--eval-every", type=int, default=50)
+    parser.add_argument(
+        "--warmup-bits",
+        type=int,
+        default=4,
+        help="Bit-width the forward pass STARTS at, annealed down to --bits "
+        "over --bit-anneal-steps. Progressive quantization (the plan's "
+        "FP16->INT4->INT2 route): a pretrained model quantized straight to "
+        "2 bits perturbs the forward enough to explode gradients through the "
+        "network's depth on step 1, before any learning happens. Starting at "
+        "4 bits (near-lossless for these models) keeps the initial forward "
+        "stable, then the perturbation is increased gradually while the "
+        "weights adapt to track it. Set equal to --bits to disable annealing.",
+    )
+    parser.add_argument(
+        "--bit-anneal-steps",
+        type=int,
+        default=150,
+        help="Number of steps over which the forward bit-width steps down "
+        "from --warmup-bits to --bits.",
+    )
+    parser.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=50,
+        help="Linear LR warmup steps (0 -> --lr). Standard QAT stabilizer: "
+        "avoids a large first update on the noisy quantized loss surface.",
+    )
     parser.add_argument("--wikitext2", type=Path, default=Path("eval/data/wikitext2_test.txt"))
     parser.add_argument(
         "--eval-max-tokens",
@@ -133,7 +170,21 @@ def main() -> None:
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)
+    lr_scheduler = get_scheduler(
+        "linear",
+        optimizer=optimizer,
+        num_warmup_steps=args.warmup_steps,
+        num_training_steps=args.max_steps,
+    )
+    model, optimizer, dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, dataloader, lr_scheduler
+    )
+
+    if args.warmup_bits > args.bits:
+        print(
+            f"==> Progressive bit-width: forward starts at {args.warmup_bits}-bit, "
+            f"annealing to {args.bits}-bit over {args.bit_anneal_steps} steps"
+        )
 
     if args.save_every:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -151,6 +202,11 @@ def main() -> None:
     done = False
     while not done:
         for batch in dataloader:
+            current_bits = scheduled_bits(
+                step, args.warmup_bits, args.bits, args.bit_anneal_steps
+            )
+            set_qat_bits(model, current_bits)
+
             outputs = model(**batch)
             loss = outputs.loss
 
@@ -181,6 +237,7 @@ def main() -> None:
                     consecutive_skips += 1
                 else:
                     optimizer.step()
+                    lr_scheduler.step()
                     optimizer.zero_grad()
                     step += 1
                     consecutive_skips = 0
@@ -206,7 +263,11 @@ def main() -> None:
                 ppl = compute_perplexity(
                     model, tokenizer, args.wikitext2, device, max_eval_tokens=args.eval_max_tokens
                 )
-                print(f"step {step}/{args.max_steps}  loss={loss.item():.4f}  wikitext2_ppl={ppl:.4f}")
+                print(
+                    f"step {step}/{args.max_steps}  loss={loss.item():.4f}  "
+                    f"wikitext2_ppl={ppl:.4f}  bits={current_bits}  "
+                    f"lr={lr_scheduler.get_last_lr()[0]:.2e}  grad_norm={grad_norm:.3f}"
+                )
 
             if args.save_every and step % args.save_every == 0:
                 state_dict = fake_quantized_state_dict(accelerator.unwrap_model(model))
@@ -217,7 +278,12 @@ def main() -> None:
                 done = True
                 break
 
-    print("==> Materializing fake-quantized weights into plain Linear layers for export")
+    # Make sure export bakes in the FINAL target bit-width, not whatever the
+    # last training step happened to be at (they match once training runs past
+    # --bit-anneal-steps, but force it so a short run truncated mid-anneal still
+    # exports at the intended --bits rather than an intermediate width).
+    set_qat_bits(model, args.bits)
+    print(f"==> Materializing fake-quantized weights ({args.bits}-bit) into plain Linear layers for export")
     unwrapped = accelerator.unwrap_model(model)
     materialize_qat(unwrapped)
 
