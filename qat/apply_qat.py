@@ -25,21 +25,55 @@ def apply_qat(
     group_size: int = 32,
     init_bits: int = 4,
     skip_patterns=DEFAULT_SKIP_PATTERNS,
+    extra_skip_patterns=(),
 ) -> list[str]:
     """Replaces eligible nn.Linear submodules with FakeQuantLinear, in place.
     Returns the list of replaced module names.
+
+    `extra_skip_patterns` are appended to the defaults -- use it for
+    mixed-precision QAT, keeping specific quantization-sensitive layers at full
+    precision. Some pretrained weights (observed: Qwen3-0.6B layer-0 k_proj,
+    ~1e8:1 dynamic range) destabilize their downstream RMSNorm/attention badly
+    enough under low-bit quantization that gradients explode; excluding just
+    those few layers is standard practice (cf. LLM-QAT keeping sensitive
+    layers higher-precision) and costs little model size.
     """
+    all_skip = tuple(skip_patterns) + tuple(extra_skip_patterns)
     replaced = []
     for parent_name, parent in list(model.named_modules()):
         for child_name, child in list(parent.named_children()):
             full_name = f"{parent_name}.{child_name}" if parent_name else child_name
-            if isinstance(child, nn.Linear) and not _should_skip(full_name, skip_patterns):
+            if isinstance(child, nn.Linear) and not _should_skip(full_name, all_skip):
                 qlinear = FakeQuantLinear.from_linear(
                     child, bits=bits, group_size=group_size, init_bits=init_bits
                 )
                 setattr(parent, child_name, qlinear)
                 replaced.append(full_name)
     return replaced
+
+
+def weight_dynamic_range(model: nn.Module) -> list[tuple]:
+    """Per-Linear weight sensitivity stats, sorted most-pathological first.
+
+    Returns (name, max_abs, min_nonzero_abs, max_over_median) tuples. A very
+    large max_abs/median_abs (outlier-heavy weight) is the signature of a layer
+    that low-bit quantization tends to destabilize -- use this to decide what
+    to pass as extra skip patterns.
+    """
+    rows = []
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.Linear, FakeQuantLinear)):
+            w = module.weight.detach().float().abs().flatten()
+            nz = w[w > 0]
+            if nz.numel() == 0:
+                continue
+            max_abs = w.max().item()
+            min_nz = nz.min().item()
+            median = nz.median().item()
+            max_over_median = max_abs / median if median > 0 else float("inf")
+            rows.append((name, max_abs, min_nz, max_over_median))
+    rows.sort(key=lambda r: r[3], reverse=True)
+    return rows
 
 
 def set_qat_bits(model: nn.Module, bits: int) -> int:

@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from qat.apply_qat import apply_qat, set_qat_bits  # noqa: E402
+from qat.apply_qat import apply_qat, set_qat_bits, weight_dynamic_range  # noqa: E402
 from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
 
 
@@ -97,6 +97,13 @@ def main() -> None:
         examples, batch_size=args.batch_size, shuffle=False,
         collate_fn=lambda b: collate_fn(b, tokenizer),
     )
+
+    print("\n===== weight dynamic range (most outlier-heavy first) =====")
+    print("  Layers with a very large max/median are quantization-sensitive and")
+    print("  candidates for --skip-layers (kept full-precision) in train_qat.py.")
+    print(f"  {'max|w|':>11}  {'min_nonzero':>12}  {'max/median':>12}  layer")
+    for name, max_abs, min_nz, max_over_median in weight_dynamic_range(model)[:12]:
+        print(f"  {max_abs:11.3e}  {min_nz:12.3e}  {max_over_median:12.3e}  {name}")
 
     if args.trace_nan:
         install_nan_hooks(model)

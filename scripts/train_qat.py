@@ -44,6 +44,17 @@ def main() -> None:
     parser.add_argument("--bits", type=int, default=2, help="Final target bit-width.")
     parser.add_argument("--init-bits", type=int, default=4)
     parser.add_argument("--group-size", type=int, default=32)
+    parser.add_argument(
+        "--skip-layers",
+        nargs="+",
+        default=[],
+        help="Substring patterns of layers to KEEP at full precision "
+        "(mixed-precision QAT), on top of the always-skipped embeddings / "
+        "lm_head / norms. Use for quantization-sensitive outlier-heavy layers "
+        "that destabilize training -- run scripts/diagnose_qat_grads.py to see "
+        "each layer's weight dynamic range and pick them. Example: "
+        "--skip-layers layers.0.self_attn.k_proj",
+    )
     parser.add_argument("--dataset", default="tatsu-lab/alpaca")
     parser.add_argument("--max-examples", type=int, default=2000)
     parser.add_argument("--max-length", type=int, default=512)
@@ -141,8 +152,13 @@ def main() -> None:
         f"(target {args.bits}-bit, initialized from {args.init_bits}-bit rounding, "
         f"group size {args.group_size})"
     )
-    replaced = apply_qat(model, bits=args.bits, group_size=args.group_size, init_bits=args.init_bits)
+    replaced = apply_qat(
+        model, bits=args.bits, group_size=args.group_size, init_bits=args.init_bits,
+        extra_skip_patterns=tuple(args.skip_layers),
+    )
     print(f"    wrapped {len(replaced)} linear layers")
+    if args.skip_layers:
+        print(f"    kept at full precision (mixed-precision): {', '.join(args.skip_layers)}")
 
     print(f"==> Loading {args.max_examples} examples from {args.dataset}")
     raw_examples = load_alpaca_examples(max_examples=args.max_examples, dataset_name=args.dataset)
