@@ -134,6 +134,28 @@ def main() -> None:
         "without making progress. Failing loudly here is better than a "
         "silent infinite loop burning GPU time.",
     )
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Trade compute for activation memory (recompute activations in "
+        "the backward pass instead of storing them). Needed to fit the fp32 "
+        "forward/backward on a small GPU; does not change the numerics, only "
+        "when activations are materialized.",
+    )
+    parser.add_argument(
+        "--optimizer",
+        choices=["adamw", "adafactor", "sgd"],
+        default="adamw",
+        help="Update rule. Default 'adamw' is what the reference GPU run uses. "
+        "'adafactor' / 'sgd' exist ONLY to shrink optimizer-state memory so a "
+        "full-precision (fp32) run fits on a small GPU: AdamW keeps two fp32 "
+        "moment buffers per weight (~2x model size), which alone can exceed a "
+        "6 GB card for a 0.6B model. These alternatives keep the fp32 "
+        "fake-quant forward/backward math IDENTICAL -- so a NaN/Inf originating "
+        "there (the failure mode this project guards against) still surfaces in "
+        "the loss / grad-norm checks regardless of optimizer -- they only "
+        "change how the (finite) gradient is turned into a weight update.",
+    )
     args = parser.parse_args()
     checkpoint_dir = args.checkpoint_dir or args.output_dir.parent / f"{args.output_dir.name}-partial"
 
@@ -185,7 +207,24 @@ def main() -> None:
         collate_fn=lambda batch: collate_fn(batch, tokenizer),
     )
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    if args.gradient_checkpointing:
+        model.config.use_cache = False
+        model.gradient_checkpointing_enable()
+        print("==> Gradient checkpointing enabled (lower activation memory, same numerics)")
+
+    if args.optimizer == "adamw":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    elif args.optimizer == "sgd":
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+    else:  # adafactor -- factored 2nd moment, no 1st moment => tiny state
+        from transformers.optimization import Adafactor
+
+        optimizer = Adafactor(
+            model.parameters(), lr=args.lr,
+            scale_parameter=False, relative_step=False, warmup_init=False,
+        )
+    if args.optimizer != "adamw":
+        print(f"==> Optimizer: {args.optimizer} (memory-reduced; fp32 fake-quant math unchanged)")
     lr_scheduler = get_scheduler(
         "linear",
         optimizer=optimizer,

@@ -19,7 +19,10 @@ DEFAULT_SUBJECTS = [
 
 def prepare_wikitext2(out_dir: Path) -> None:
     print("==> Downloading wikitext-2-raw-v1 (test split)")
-    ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+    # Use the namespaced repo id: newer huggingface_hub (1.x) rejects the
+    # legacy canonical id "wikitext" (must be "namespace/name"). The namespaced
+    # id also resolves on older datasets versions, so this is safe everywhere.
+    ds = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="test")
     text = "\n".join(row["text"] for row in ds if row["text"].strip())
     out_path = out_dir / "wikitext2_test.txt"
     out_path.write_text(text, encoding="utf-8")
