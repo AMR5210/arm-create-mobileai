@@ -65,6 +65,16 @@ def main() -> None:
         default=None,
         help="Defaults to <output-dir>-partial.",
     )
+    parser.add_argument(
+        "--max-grad-norm",
+        type=float,
+        default=1.0,
+        help="Gradient clipping norm. QAT's loss surface is noisier than "
+        "ordinary fine-tuning (every forward pass injects quantization "
+        "rounding noise), so an unclipped occasional large gradient can "
+        "throw a weight group into a badly-scaled region and cascade to "
+        "NaN within tens of steps.",
+    )
     args = parser.parse_args()
     checkpoint_dir = args.checkpoint_dir or args.output_dir.parent / f"{args.output_dir.name}-partial"
 
@@ -117,7 +127,19 @@ def main() -> None:
         for batch in dataloader:
             outputs = model(**batch)
             loss = outputs.loss
+
+            if not torch.isfinite(loss):
+                # Don't let a single bad batch permanently poison AdamW's
+                # per-parameter moment buffers with NaN/Inf (which, once
+                # NaN, stay NaN for the rest of training). Skip the update
+                # and move on instead -- no point even backpropagating a
+                # non-finite loss.
+                print(f"    [warning] step {step + 1}: non-finite loss ({loss.item()}), skipping this update")
+                optimizer.zero_grad()
+                continue
+
             accelerator.backward(loss)
+            accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)
             optimizer.step()
             optimizer.zero_grad()
             step += 1

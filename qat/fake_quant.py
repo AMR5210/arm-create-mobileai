@@ -40,7 +40,18 @@ def affine_fake_quant(weight: torch.Tensor, bits: int, group_size: int) -> torch
         w_max = grouped.max(dim=-1, keepdim=True).values
         levels = 2 ** bits - 1
         scale = (w_max - w_min).clamp_min(_EPS) / levels
-        zero_point = torch.round(-w_min / scale).clamp(0, levels)
+        # Deliberately NOT clamped to [0, levels]. Real integer-quantization
+        # formats clamp zero-point because it must be a storable code in that
+        # range; this is a training-time simulation with no such constraint.
+        # A group that's entirely one-signed (all-positive or all-negative --
+        # common for e.g. attention K/Q projections) has a "natural"
+        # zero-point far outside [0, levels]; clamping it there breaks the
+        # min->0, max->levels mapping this scale/zero-point pair was derived
+        # for, which pushes every value in the group to the same saturated
+        # code (dead: zero gradient) and corrupts the dequantized value by
+        # orders of magnitude -- this was reproduced directly and was the
+        # root cause of the fp32 weights going to NaN within ~50 QAT steps.
+        zero_point = torch.round(-w_min / scale)
 
     x = grouped / scale + zero_point
     x_rounded = x + (torch.round(x) - x).detach()  # STE: identity gradient through round()
