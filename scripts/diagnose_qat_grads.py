@@ -24,6 +24,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from qat.apply_qat import apply_qat, set_qat_bits, weight_dynamic_range  # noqa: E402
+from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
 
 
@@ -87,7 +88,9 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(args.base_model, dtype=torch.float32).to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.base_model, dtype=torch.float32, attn_implementation=safe_attn_implementation()
+    ).to(device)
     apply_qat(model, bits=args.bits_to_probe[0], group_size=args.group_size, init_bits=args.init_bits)
 
     raw = load_alpaca_examples(max_examples=args.batch_size * args.n_batches, dataset_name=args.dataset)

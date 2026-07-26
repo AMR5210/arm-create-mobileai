@@ -23,6 +23,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from qat.apply_qat import apply_qat, fake_quantized_state_dict, materialize_qat, set_qat_bits  # noqa: E402
+from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
 from qat.eval_utils import compute_perplexity  # noqa: E402
 
@@ -167,7 +168,9 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
 
     print(f"==> Loading base model from {args.base_model}")
-    model = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.base_model, torch_dtype=torch.float32, attn_implementation=safe_attn_implementation()
+    )
 
     print(
         f"==> Wrapping linear layers with fake-quantization "
