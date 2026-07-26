@@ -40,23 +40,26 @@ def affine_fake_quant(weight: torch.Tensor, bits: int, group_size: int) -> torch
         w_max = grouped.max(dim=-1, keepdim=True).values
         levels = 2 ** bits - 1
         scale = (w_max - w_min).clamp_min(_EPS) / levels
-        # Deliberately NOT clamped to [0, levels]. Real integer-quantization
-        # formats clamp zero-point because it must be a storable code in that
-        # range; this is a training-time simulation with no such constraint.
-        # A group that's entirely one-signed (all-positive or all-negative --
-        # common for e.g. attention K/Q projections) has a "natural"
-        # zero-point far outside [0, levels]; clamping it there breaks the
-        # min->0, max->levels mapping this scale/zero-point pair was derived
-        # for, which pushes every value in the group to the same saturated
-        # code (dead: zero gradient) and corrupts the dequantized value by
-        # orders of magnitude -- this was reproduced directly and was the
-        # root cause of the fp32 weights going to NaN within ~50 QAT steps.
-        zero_point = torch.round(-w_min / scale)
 
-    x = grouped / scale + zero_point
+    # Min-shift formulation (no explicit integer zero-point). Normalizing by
+    # (w - w_min) puts every value in [0, levels] by construction -- so no
+    # zero-point is needed, and there is no subtraction of two large numbers.
+    #
+    # The earlier zero-point form (x = w/scale + round(-w_min/scale)) is
+    # numerically fragile precisely where this project fails: for a
+    # near-degenerate group (tiny range, common in pretrained weights) scale is
+    # small, so the zero-point is huge, and x = w/scale + zero_point subtracts
+    # two large near-equal numbers -- catastrophic fp32 cancellation. That gets
+    # STRICTLY WORSE at higher bit-widths (more levels -> smaller scale ->
+    # larger zero-point), which matched the observed "bits=4 produced NaN
+    # gradients where bits=2 did not" report. This form removes that path
+    # entirely while producing an equivalent quantization (identity STE
+    # Jacobian preserved; outputs differ from the old form by at most one level
+    # at the grid boundary, i.e. within quantization noise).
+    x = (grouped - w_min) / scale
     x_rounded = x + (torch.round(x) - x).detach()  # STE: identity gradient through round()
     q = torch.clamp(x_rounded, 0, levels)
-    dequant = (q - zero_point) * scale
+    dequant = q * scale + w_min
 
     dequant = dequant.view(out_features, -1)
     if pad:
