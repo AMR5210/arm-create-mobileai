@@ -75,6 +75,17 @@ def main() -> None:
         "throw a weight group into a badly-scaled region and cascade to "
         "NaN within tens of steps.",
     )
+    parser.add_argument(
+        "--max-consecutive-skips",
+        type=int,
+        default=20,
+        help="Abort if this many updates in a row are skipped for a "
+        "non-finite loss/gradient. Once AdamW's moment buffers or the "
+        "model's own parameters go NaN, every future batch produces NaN "
+        "too, regardless of content -- skipping forever would just spin "
+        "without making progress. Failing loudly here is better than a "
+        "silent infinite loop burning GPU time.",
+    )
     args = parser.parse_args()
     checkpoint_dir = args.checkpoint_dir or args.output_dir.parent / f"{args.output_dir.name}-partial"
 
@@ -100,6 +111,20 @@ def main() -> None:
     raw_examples = load_alpaca_examples(max_examples=args.max_examples, dataset_name=args.dataset)
     examples = [build_supervised_example(ex, tokenizer, args.max_length) for ex in raw_examples]
 
+    # If an example's instruction+input is long enough that truncating
+    # prompt+response to --max-length cuts off the response entirely, every
+    # label ends up masked (-100) with nothing left to supervise. Cross-entropy
+    # with ignore_index=-100 over zero unmasked tokens is 0/0 = NaN, regardless
+    # of anything happening in the model -- drop those examples rather than
+    # let them silently produce a NaN loss mid-training.
+    n_before = len(examples)
+    examples = [ex for ex in examples if any(label != -100 for label in ex["labels"])]
+    if len(examples) < n_before:
+        print(
+            f"    dropped {n_before - len(examples)} example(s) whose response was fully "
+            f"truncated away by --max-length {args.max_length} (no supervision signal left)"
+        )
+
     dataloader = DataLoader(
         examples,
         batch_size=args.batch_size,
@@ -121,12 +146,15 @@ def main() -> None:
     print(f"    perplexity: {ppl:.4f}")
 
     step = 0
+    consecutive_skips = 0
     model.train()
     done = False
     while not done:
         for batch in dataloader:
             outputs = model(**batch)
             loss = outputs.loss
+
+            updated = False
 
             if not torch.isfinite(loss):
                 # Don't let a single bad batch permanently poison AdamW's
@@ -136,13 +164,43 @@ def main() -> None:
                 # non-finite loss.
                 print(f"    [warning] step {step + 1}: non-finite loss ({loss.item()}), skipping this update")
                 optimizer.zero_grad()
-                continue
+                consecutive_skips += 1
+            else:
+                accelerator.backward(loss)
+                grad_norm = accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                # A finite loss does NOT guarantee a finite gradient -- backward()
+                # can produce NaN/Inf gradients from a forward pass that looked
+                # completely fine. clip_grad_norm_ does not sanitize this: clipping
+                # a NaN-normed gradient with a NaN coefficient still yields NaN,
+                # which optimizer.step() would then bake permanently into AdamW's
+                # moment buffers. Check it explicitly instead of trusting the loss
+                # check alone.
+                if grad_norm is not None and not torch.isfinite(grad_norm):
+                    print(f"    [warning] step {step + 1}: non-finite grad norm ({grad_norm}), skipping this update")
+                    optimizer.zero_grad()
+                    consecutive_skips += 1
+                else:
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    step += 1
+                    consecutive_skips = 0
+                    updated = True
 
-            accelerator.backward(loss)
-            accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-            optimizer.step()
-            optimizer.zero_grad()
-            step += 1
+            if consecutive_skips >= args.max_consecutive_skips:
+                raise RuntimeError(
+                    f"{consecutive_skips} consecutive updates skipped for non-finite "
+                    f"loss/gradient at step {step} -- the model is very likely "
+                    f"permanently NaN-poisoned at this point (once AdamW's moment "
+                    f"buffers or the parameters themselves go NaN, they never "
+                    f"recover, so every batch produces NaN forever regardless of "
+                    f"content). Restart training from scratch, or from the last "
+                    f"safety-net checkpoint in {checkpoint_dir} if step >= "
+                    f"--save-every once. Consider a lower --lr and/or "
+                    f"--max-grad-norm before retrying."
+                )
+
+            if not updated:
+                continue
 
             if step % args.eval_every == 0 or step == args.max_steps:
                 ppl = compute_perplexity(
