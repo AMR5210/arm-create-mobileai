@@ -38,6 +38,17 @@ def ask_model(llama_cli: Path, model_path: Path, prompt: str, timeout: int = 120
         "-n", "8",
         "--temp", "0",
         "-no-cnv",
+        # llama-cli's conversation mode auto-enables per-turn looping whenever the
+        # model ships a chat template (true for every model here) -- `-no-cnv`
+        # alone does not exit after the turn; without --single-turn, the process
+        # sits at an interactive `>` prompt reading a closed stdin forever, so
+        # every call here silently burns the full `timeout` and returns "".
+        "--single-turn",
+        # Qwen3's chat template defaults to its reasoning ("thinking") mode,
+        # which spends the whole `-n 8` budget on a "<think>..." preamble and
+        # never reaches a letter. Disabling it via the template's own toggle
+        # (see qat/data.py's chat template handling) restores a direct answer.
+        "--chat-template-kwargs", '{"enable_thinking": false}',
         "--no-display-prompt",
     ]
     try:
@@ -60,7 +71,18 @@ def run_instruction_eval(llama_cli: Path, model_path: Path, eval_jsonl: Path) ->
     for row in rows:
         prompt = build_prompt(row["question"], row["choices"])
         raw_output = ask_model(llama_cli, model_path, prompt)
-        match = ANSWER_RE.search(raw_output)
+        # llama-cli's conversation mode echoes the prompt back into stdout even
+        # with --no-display-prompt (that flag only suppresses a different code
+        # path). Since the prompt always ends in "Answer:", scanning the whole
+        # captured stdout finds stray A/B/C/D word-boundary matches from the
+        # echoed prompt itself (the choice list, or even incidental capital
+        # letters inside the question text, e.g. "A store had...") *before*
+        # the model's real completion -- which is identical across every
+        # model tested, since it's a property of the prompt, not the answer.
+        # Only look at what follows the last "Answer:" (the model's actual
+        # generated continuation).
+        completion = raw_output.rsplit("Answer:", 1)[-1]
+        match = ANSWER_RE.search(completion)
         predicted_letter = match.group(1) if match else None
         predicted_idx = LETTERS.index(predicted_letter) if predicted_letter else -1
         is_correct = predicted_idx == row["answer"]
