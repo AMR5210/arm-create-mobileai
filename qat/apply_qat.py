@@ -22,7 +22,7 @@ def _should_skip(name: str, skip_patterns) -> bool:
 def apply_qat(
     model: nn.Module,
     bits: int = 2,
-    group_size: int = 32,
+    group_size: int = 16,  # Q2_K sub-block aligned (see scripts/export_qat_gguf.py)
     init_bits: int = 4,
     skip_patterns=DEFAULT_SKIP_PATTERNS,
     extra_skip_patterns=(),

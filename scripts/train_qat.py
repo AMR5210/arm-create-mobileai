@@ -44,7 +44,13 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("models/qwen3-0.6b-qat-hf"))
     parser.add_argument("--bits", type=int, default=2, help="Final target bit-width.")
     parser.add_argument("--init-bits", type=int, default=4)
-    parser.add_argument("--group-size", type=int, default=32)
+    parser.add_argument(
+        "--group-size", type=int, default=16,
+        help="Per-group size for weight fake-quant. Default 16 aligns with the "
+        "GGUF Q2_K sub-block size (16 elements), so the QAT grouping matches the "
+        "deployment quantiser's granularity (see scripts/export_qat_gguf.py). "
+        "Earlier runs used 32; 16 is the export-aligned default going forward.",
+    )
     parser.add_argument(
         "--skip-layers",
         nargs="+",

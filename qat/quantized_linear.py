@@ -22,7 +22,7 @@ class FakeQuantLinear(nn.Module):
         cls,
         linear: nn.Linear,
         bits: int = 2,
-        group_size: int = 32,
+        group_size: int = 16,  # Q2_K sub-block aligned (see scripts/export_qat_gguf.py)
         init_bits: int = 4,
     ) -> "FakeQuantLinear":
         init_weight = round_trip_init(linear.weight.data, bits=init_bits, group_size=group_size)

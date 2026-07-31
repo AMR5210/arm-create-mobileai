@@ -1,28 +1,33 @@
 #!/usr/bin/env bash
-# Exports a QAT-trained HF checkpoint into the same GGUF Q2_K runtime format
-# as the PTQ-2bit baseline, so speed/memory stay identical by construction
-# and only quality (perplexity / instruction accuracy) can differ.
+# Exports a QAT-trained HF checkpoint into GGUF Q2_K.
 #
-# Note: llama-quantize computes its own per-block scale/zero-point when
-# producing Q2_K, so the exported weights are not bit-identical to what was
-# simulated during QAT training (qat/fake_quant.py uses a simpler per-group
-# affine scheme, not llama.cpp's K-quant super-block layout). The QAT premise
-# still holds in practice -- gradient descent has shaped the weights to be
-# more robust to 2-bit rounding in general, not just to the exact scheme used
-# during training -- but this is a real limitation, not a rounding error, and
-# should be stated plainly in the write-up rather than glossed over.
+# This is now a thin wrapper around scripts/export_qat_gguf.py, which packs
+# Q2_K in-process (a faithful port of ggml's reference quantiser) so we can:
+#   Fix 1 - control the Q2_K scheme instead of black-box re-quantizing;
+#   Fix 2 - keep the mixed-precision --skip-layers as F16 (not crush them to 2-bit);
+#   Fix 3 - restore the base tokenizer before conversion.
+# Unlike the old path it does NOT need a compiled llama-quantize; it only needs
+# llama.cpp's pure-Python convert_hf_to_gguf.py (in third_party/llama.cpp) and
+# the `gguf` pip package.
+#
+# Usage (preferred, explicit flags forwarded to the Python script):
+#   scripts/export_qat_gguf.sh --hf-dir models/qwen3-0.6b-qat-hf \
+#       --out models/qwen3-0.6b-qat-q2_k.gguf \
+#       --skip-layers layers.16.self_attn.k_proj layers.27.mlp.gate_proj ...
+#
+# Legacy positional form (single HF dir) is still accepted for back-compat:
+#   scripts/export_qat_gguf.sh models/qwen3-0.6b-qat-hf
+# but note: pass --skip-layers to preserve mixed precision, otherwise every
+# quantizable layer (including the ones trained full-precision) becomes Q2_K.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY_EXPORT="$ROOT_DIR/scripts/export_qat_gguf.py"
 
-QAT_HF_DIR="${1:-models/qwen3-0.6b-qat-hf}"
-FP16_OUT="${2:-models/qwen3-0.6b-qat-fp16.gguf}"
-Q2K_OUT="${3:-models/qwen3-0.6b-qat-q2_k.gguf}"
+if [ "$#" -ge 1 ] && [ "${1#-}" = "$1" ]; then
+  # First arg is a bare path (legacy positional): map to --hf-dir, forward rest.
+  HF_DIR="$1"; shift
+  exec python3 "$PY_EXPORT" --hf-dir "$HF_DIR" "$@"
+fi
 
-"$ROOT_DIR/scripts/convert_to_gguf.sh" "$QAT_HF_DIR" "$FP16_OUT"
-"$ROOT_DIR/scripts/quantize_ptq.sh" "$FP16_OUT" "$Q2K_OUT" Q2_K
-
-echo
-echo "==> QAT export complete: $Q2K_OUT"
-echo "Benchmark it with:"
-echo "  python scripts/benchmark.py --tag qat-2bit --device \"iPhone 17 Pro Max\" --model $Q2K_OUT"
+exec python3 "$PY_EXPORT" "$@"

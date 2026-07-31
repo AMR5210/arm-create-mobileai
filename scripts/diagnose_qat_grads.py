@@ -59,7 +59,7 @@ def grad_report(model) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-model", type=Path, default=Path("models/qwen3-0.6b-hf"))
-    parser.add_argument("--group-size", type=int, default=32)
+    parser.add_argument("--group-size", type=int, default=16)  # Q2_K-aligned (see export_qat_gguf.py)
     parser.add_argument("--init-bits", type=int, default=4)
     parser.add_argument("--dataset", default="tatsu-lab/alpaca")
     parser.add_argument("--max-length", type=int, default=512)
