@@ -24,6 +24,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from qat.apply_qat import apply_qat, fake_quantized_state_dict, materialize_qat, set_qat_bits  # noqa: E402
 from qat.attn_backend import safe_attn_implementation  # noqa: E402
+from qat.calibrate_clip import calibrate_asymmetric_clipping  # noqa: E402
 from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
 from qat.eval_utils import compute_perplexity  # noqa: E402
 
@@ -38,13 +39,26 @@ def scheduled_bits(step: int, warmup_bits: int, target_bits: int, anneal_steps: 
     return max(target_bits, round(warmup_bits - frac * (warmup_bits - target_bits)))
 
 
-def kd_loss_response_only(student_logits, teacher_logits, labels):
-    """KL(teacher || student), response tokens only.
+def _kl_response_only(log_p: torch.Tensor, log_q: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """KL(P || Q) = sum_c p*(log p - log q), masked mean over response tokens."""
+    kl = (log_p.exp() * (log_p - log_q)).sum(-1)
+    return kl[mask].mean()
 
-    Uses the same causal shift and the same -100 label mask as the hard-label
-    loss, so distillation only pulls the student toward the teacher's
-    distribution on the tokens the model is actually graded on (the response),
-    not the instruction/input prompt tokens.
+
+def cakld_loss(student_logits, teacher_logits, labels, gamma: float):
+    """BitDistiller's Confidence-Aware KLD (arXiv:2402.10631, Eq. 5).
+
+    Blends reverse KL (mode-seeking, weight gamma) and forward KL
+    (mode-covering, weight 1-gamma), response tokens only (same -100 mask as
+    the hard label loss):
+
+        D_CAKLD(P_T || P_S) = gamma * KL(P_S || P_T) + (1-gamma) * KL(P_T || P_S)
+
+    `gamma` is a single scalar precomputed once, prior to training, as the
+    teacher's average confidence on the actual next token (see
+    precompute_cakld_gamma) -- NOT a per-token weight. When the teacher is
+    confident on the training data, CAKLD leans mode-seeking; when it's
+    uncertain, it leans mode-covering.
     """
     shift_student = student_logits[..., :-1, :].float()
     shift_teacher = teacher_logits[..., :-1, :].float()
@@ -53,8 +67,38 @@ def kd_loss_response_only(student_logits, teacher_logits, labels):
         return shift_student.new_zeros(())
     student_log_probs = torch.log_softmax(shift_student, dim=-1)
     teacher_log_probs = torch.log_softmax(shift_teacher, dim=-1)
-    kl_per_token = (teacher_log_probs.exp() * (teacher_log_probs - student_log_probs)).sum(-1)
-    return kl_per_token[mask].mean()
+    reverse_kl = _kl_response_only(student_log_probs, teacher_log_probs, mask)  # KL(S || T)
+    forward_kl = _kl_response_only(teacher_log_probs, student_log_probs, mask)  # KL(T || S)
+    return gamma * reverse_kl + (1 - gamma) * forward_kl
+
+
+@torch.no_grad()
+def precompute_cakld_gamma(teacher_model, dataloader, device, n_batches: int = 10) -> float:
+    """BitDistiller Eq. 5's gamma: the teacher's average probability on the
+    actual next token, over a handful of calibration batches (Appendix
+    A.2: ten batches, forward-only, no parameter updates), computed once
+    before training starts. Response tokens only, matching this repo's
+    -100 label mask.
+    """
+    teacher_model.eval()
+    prob_sum = 0.0
+    count = 0
+    for i, batch in enumerate(dataloader):
+        if i >= n_batches:
+            break
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels = batch["labels"].to(device)
+        logits = teacher_model(input_ids=input_ids, attention_mask=attention_mask).logits
+        shift_logits = logits[..., :-1, :].float()
+        shift_labels = labels[..., 1:]
+        mask = shift_labels != -100
+        log_probs = torch.log_softmax(shift_logits, dim=-1)
+        safe_labels = shift_labels.clamp(min=0)  # -100 would break gather; masked out below anyway
+        token_log_probs = log_probs.gather(-1, safe_labels.unsqueeze(-1)).squeeze(-1)
+        prob_sum += token_log_probs.exp()[mask].sum().item()
+        count += mask.sum().item()
+    return prob_sum / count if count else 0.5
 
 
 def main() -> None:
@@ -172,14 +216,33 @@ def main() -> None:
         "--distill-weight",
         type=float,
         default=0.0,
-        help="Weight for a knowledge-distillation KL term against a frozen teacher "
+        help="Weight for a knowledge-distillation term against a frozen teacher "
         "(the unmodified --base-model checkpoint, loaded separately from the QAT "
-        "student). total_loss = hard_label_loss + distill_weight * KL(teacher || "
+        "student). total_loss = hard_label_loss + distill_weight * CAKLD(teacher, "
         "student), computed only over response tokens (same -100 label mask as the "
-        "hard loss). This is LLM-QAT's core technique: train the quantized model to "
-        "match the full-precision model's output distribution, not just the ground- "
-        "truth labels. 0 (default) disables it entirely -- no teacher model is "
-        "loaded and behavior is unchanged.",
+        "hard loss). CAKLD (arXiv:2402.10631 Eq. 5) blends reverse and forward KL "
+        "with a coefficient auto-estimated from the teacher's confidence on the "
+        "training data, instead of a fixed KL direction. 0 (default) disables it "
+        "entirely -- no teacher model is loaded and behavior is unchanged.",
+    )
+    parser.add_argument(
+        "--cakld-calib-batches",
+        type=int,
+        default=10,
+        help="Number of forward-only batches used to precompute CAKLD's gamma "
+        "coefficient (arXiv:2402.10631 Appendix A.2 uses ten). Only used when "
+        "--distill-weight > 0.",
+    )
+    parser.add_argument(
+        "--calibrate-clip",
+        action="store_true",
+        help="Asymmetric clipping calibration (arXiv:2402.10631 Section 3.1, Eq. 3) "
+        "before QAT starts: for each quantized layer, grid-search clip bounds "
+        "(alpha, beta) that minimize output reconstruction error on real "
+        "calibration activations, then permanently clamp that layer's raw weight "
+        "to those bounds. Targets the same outlier-heavy layers --skip-layers "
+        "works around, but at the quantization-scheme level (bounding the "
+        "asymmetric range every group quantizes from) rather than excluding them.",
     )
     parser.add_argument(
         "--optimizer",
@@ -208,29 +271,7 @@ def main() -> None:
     print(f"==> Loading base model from {args.base_model}")
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model, torch_dtype=torch.float32, attn_implementation=safe_attn_implementation()
-    )
-
-    print(
-        f"==> Wrapping linear layers with fake-quantization "
-        f"(target {args.bits}-bit, initialized from {args.init_bits}-bit rounding, "
-        f"group size {args.group_size})"
-    )
-    replaced = apply_qat(
-        model, bits=args.bits, group_size=args.group_size, init_bits=args.init_bits,
-        extra_skip_patterns=tuple(args.skip_layers),
-    )
-    print(f"    wrapped {len(replaced)} linear layers")
-    if args.skip_layers:
-        print(f"    kept at full precision (mixed-precision): {', '.join(args.skip_layers)}")
-
-    teacher_model = None
-    if args.distill_weight > 0:
-        print(f"==> Loading frozen teacher from {args.base_model} (distill_weight={args.distill_weight})")
-        teacher_model = AutoModelForCausalLM.from_pretrained(
-            args.base_model, dtype=torch.float32, attn_implementation=safe_attn_implementation()
-        ).to(device)
-        teacher_model.eval()
-        teacher_model.requires_grad_(False)
+    ).to(device)
 
     print(f"==> Loading {args.max_examples} examples from {args.dataset}")
     raw_examples = load_alpaca_examples(max_examples=args.max_examples, dataset_name=args.dataset)
@@ -256,6 +297,40 @@ def main() -> None:
         shuffle=True,
         collate_fn=lambda batch: collate_fn(batch, tokenizer),
     )
+
+    if args.calibrate_clip:
+        print("==> Asymmetric clipping calibration (BitDistiller Eq. 3), before fake-quant wrapping")
+        calib_batches = [batch for _, batch in zip(range(8), dataloader)]
+        clipped = calibrate_asymmetric_clipping(
+            model, calib_batches, bits=args.bits, group_size=args.group_size,
+            device=device, extra_skip_patterns=tuple(args.skip_layers),
+        )
+        print(f"    calibrated and clamped {len(clipped)} layers")
+
+    print(
+        f"==> Wrapping linear layers with fake-quantization "
+        f"(target {args.bits}-bit, initialized from {args.init_bits}-bit rounding, "
+        f"group size {args.group_size})"
+    )
+    replaced = apply_qat(
+        model, bits=args.bits, group_size=args.group_size, init_bits=args.init_bits,
+        extra_skip_patterns=tuple(args.skip_layers),
+    )
+    print(f"    wrapped {len(replaced)} linear layers")
+    if args.skip_layers:
+        print(f"    kept at full precision (mixed-precision): {', '.join(args.skip_layers)}")
+
+    teacher_model = None
+    cakld_gamma = None
+    if args.distill_weight > 0:
+        print(f"==> Loading frozen teacher from {args.base_model} (distill_weight={args.distill_weight})")
+        teacher_model = AutoModelForCausalLM.from_pretrained(
+            args.base_model, dtype=torch.float32, attn_implementation=safe_attn_implementation()
+        ).to(device)
+        teacher_model.eval()
+        teacher_model.requires_grad_(False)
+        cakld_gamma = precompute_cakld_gamma(teacher_model, dataloader, device, n_batches=args.cakld_calib_batches)
+        print(f"    CAKLD gamma (teacher confidence on response tokens): {cakld_gamma:.4f}")
 
     if args.gradient_checkpointing:
         model.config.use_cache = False
@@ -320,7 +395,7 @@ def main() -> None:
                     teacher_outputs = teacher_model(
                         input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
                     )
-                kd_loss = kd_loss_response_only(outputs.logits, teacher_outputs.logits, batch["labels"])
+                kd_loss = cakld_loss(outputs.logits, teacher_outputs.logits, batch["labels"], cakld_gamma)
                 loss = hard_loss + args.distill_weight * kd_loss
             else:
                 loss = hard_loss
