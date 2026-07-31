@@ -38,6 +38,25 @@ def scheduled_bits(step: int, warmup_bits: int, target_bits: int, anneal_steps: 
     return max(target_bits, round(warmup_bits - frac * (warmup_bits - target_bits)))
 
 
+def kd_loss_response_only(student_logits, teacher_logits, labels):
+    """KL(teacher || student), response tokens only.
+
+    Uses the same causal shift and the same -100 label mask as the hard-label
+    loss, so distillation only pulls the student toward the teacher's
+    distribution on the tokens the model is actually graded on (the response),
+    not the instruction/input prompt tokens.
+    """
+    shift_student = student_logits[..., :-1, :].float()
+    shift_teacher = teacher_logits[..., :-1, :].float()
+    mask = labels[..., 1:] != -100
+    if not mask.any():
+        return shift_student.new_zeros(())
+    student_log_probs = torch.log_softmax(shift_student, dim=-1)
+    teacher_log_probs = torch.log_softmax(shift_teacher, dim=-1)
+    kl_per_token = (teacher_log_probs.exp() * (teacher_log_probs - student_log_probs)).sum(-1)
+    return kl_per_token[mask].mean()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-model", type=Path, default=Path("models/qwen3-0.6b-hf"))
@@ -150,6 +169,19 @@ def main() -> None:
         "when activations are materialized.",
     )
     parser.add_argument(
+        "--distill-weight",
+        type=float,
+        default=0.0,
+        help="Weight for a knowledge-distillation KL term against a frozen teacher "
+        "(the unmodified --base-model checkpoint, loaded separately from the QAT "
+        "student). total_loss = hard_label_loss + distill_weight * KL(teacher || "
+        "student), computed only over response tokens (same -100 label mask as the "
+        "hard loss). This is LLM-QAT's core technique: train the quantized model to "
+        "match the full-precision model's output distribution, not just the ground- "
+        "truth labels. 0 (default) disables it entirely -- no teacher model is "
+        "loaded and behavior is unchanged.",
+    )
+    parser.add_argument(
         "--optimizer",
         choices=["adamw", "adafactor", "sgd"],
         default="adamw",
@@ -190,6 +222,15 @@ def main() -> None:
     print(f"    wrapped {len(replaced)} linear layers")
     if args.skip_layers:
         print(f"    kept at full precision (mixed-precision): {', '.join(args.skip_layers)}")
+
+    teacher_model = None
+    if args.distill_weight > 0:
+        print(f"==> Loading frozen teacher from {args.base_model} (distill_weight={args.distill_weight})")
+        teacher_model = AutoModelForCausalLM.from_pretrained(
+            args.base_model, dtype=torch.float32, attn_implementation=safe_attn_implementation()
+        ).to(device)
+        teacher_model.eval()
+        teacher_model.requires_grad_(False)
 
     print(f"==> Loading {args.max_examples} examples from {args.dataset}")
     raw_examples = load_alpaca_examples(max_examples=args.max_examples, dataset_name=args.dataset)
@@ -272,7 +313,17 @@ def main() -> None:
             set_qat_bits(model, current_bits)
 
             outputs = model(**batch)
-            loss = outputs.loss
+            hard_loss = outputs.loss
+            kd_loss = None
+            if teacher_model is not None:
+                with torch.no_grad():
+                    teacher_outputs = teacher_model(
+                        input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+                    )
+                kd_loss = kd_loss_response_only(outputs.logits, teacher_outputs.logits, batch["labels"])
+                loss = hard_loss + args.distill_weight * kd_loss
+            else:
+                loss = hard_loss
 
             updated = False
 
@@ -327,11 +378,19 @@ def main() -> None:
                 ppl = compute_perplexity(
                     model, tokenizer, args.wikitext2, device, max_eval_tokens=args.eval_max_tokens
                 )
-                print(
-                    f"step {step}/{args.max_steps}  loss={loss.item():.4f}  "
-                    f"wikitext2_ppl={ppl:.4f}  bits={current_bits}  "
-                    f"lr={lr_scheduler.get_last_lr()[0]:.2e}  grad_norm={grad_norm:.3f}"
-                )
+                if kd_loss is not None:
+                    print(
+                        f"step {step}/{args.max_steps}  loss={loss.item():.4f}  "
+                        f"hard_loss={hard_loss.item():.4f}  kd_loss={kd_loss.item():.4f}  "
+                        f"wikitext2_ppl={ppl:.4f}  bits={current_bits}  "
+                        f"lr={lr_scheduler.get_last_lr()[0]:.2e}  grad_norm={grad_norm:.3f}"
+                    )
+                else:
+                    print(
+                        f"step {step}/{args.max_steps}  loss={loss.item():.4f}  "
+                        f"wikitext2_ppl={ppl:.4f}  bits={current_bits}  "
+                        f"lr={lr_scheduler.get_last_lr()[0]:.2e}  grad_norm={grad_norm:.3f}"
+                    )
 
             if args.save_every and step % args.save_every == 0:
                 state_dict = fake_quantized_state_dict(accelerator.unwrap_model(model))
