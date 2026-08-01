@@ -31,7 +31,11 @@ from qat.apply_qat import (  # noqa: E402
 )
 from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.calibrate_clip import calibrate_asymmetric_clipping  # noqa: E402
-from qat.distill_losses import kl_distill_loss, sliced_wasserstein_distill_loss  # noqa: E402
+from qat.distill_losses import (  # noqa: E402
+    BlockHiddenStateHooks,
+    combined_block_loss,
+    kl_distill_loss,
+)
 from qat.data import (  # noqa: E402
     build_blended_examples,
     build_supervised_example,
@@ -294,28 +298,43 @@ def main() -> None:
         choices=["cakld", "kl", "wasserstein"],
         default="cakld",
         help="Which teacher/student distillation objective (only used when "
-        "--distill-weight > 0). 'cakld' (default, unchanged): confidence-aware "
-        "KL blend. 'kl': standard forward KL(teacher||student). 'wasserstein': "
-        "sliced-Wasserstein distribution-alignment loss (arXiv:2601.07878) -- "
-        "aligns the batch's teacher/student output distributions via random 1D "
-        "projections + sorted (closed-form) Wasserstein, which that paper reports "
-        "beats KL-based distillation for ultra-low-bit quantization.",
+        "--distill-weight > 0). 'cakld' (default, unchanged): confidence-aware KL "
+        "blend on final logits. 'kl': standard forward KL(teacher||student) on "
+        "final logits. 'wasserstein': the HIDDEN-STATE sliced-Wasserstein + MSE "
+        "block-alignment loss of arXiv:2601.07878 -- for each selected transformer "
+        "block, (1-sw_w)*MSE + sw_w*SW between the teacher (fp16) and student "
+        "(quantized) block hidden states; that paper reports it beats KL-based "
+        "distillation for ultra-low-bit quantization. Mutually exclusive with "
+        "cakld/kl (an alternative, not additive), matching the flag's semantics.",
     )
     parser.add_argument(
         "--sw-projections",
         type=int,
-        default=64,
-        help="Number of random 1D projections for --distill-loss wasserstein.",
+        default=256,
+        help="Random 1D projections for the SW term (--distill-loss wasserstein). "
+        "The paper sweeps 128-1024 with diminishing returns; 256 is a "
+        "cost/quality middle.",
     )
     parser.add_argument(
-        "--sw-representation",
-        choices=["prob", "logprob", "logit"],
-        default="prob",
-        help="Output-space representation projected by the sliced-Wasserstein "
-        "loss: softmax probs (default), log-probs, or raw logits. NOTE: the exact "
-        "choice in arXiv:2601.07878 was not verifiable here (paper fetch blocked); "
-        "'prob' is bounded/stable but small-magnitude, so wasserstein may need a "
-        "larger --distill-weight than cakld. Confirm against the paper.",
+        "--sw-weight",
+        type=float,
+        default=0.1,
+        help="Within-block MSE/SW blend for --distill-loss wasserstein: "
+        "(1-sw_w)*MSE + sw_w*SW. The paper's Fig 5 sweet spot is intermediate "
+        "(~0.05-0.2), not high; default 0.1. Distinct from --distill-weight, "
+        "which scales the whole block loss against the task loss.",
+    )
+    parser.add_argument(
+        "--wasserstein-layers",
+        type=int,
+        nargs="+",
+        default=[2, 6, 8, 16, 18, 21, 26, 27],
+        help="Transformer block indices whose hidden states the wasserstein loss "
+        "aligns. Default is the outlier-heavy subset from the dynamic-range report "
+        "(union of the flagged k_proj/mlp layers: 2,6,8,16,18,21,26,27) -- these "
+        "are where quantization error is largest, so activation-distribution "
+        "matching there is most likely to help, and it avoids the compute of "
+        "hooking all 28 blocks every step. (0-indexed; for Qwen3-0.6B, 28 blocks.)",
     )
     parser.add_argument(
         "--calibrate-clip",
@@ -473,6 +492,19 @@ def main() -> None:
         model, optimizer, dataloader, lr_scheduler
     )
 
+    # Hidden-state hooks for --distill-loss wasserstein: capture selected block
+    # outputs from the student's main forward and the teacher's existing
+    # distillation forward -- no extra forward pass. Registered only for that
+    # loss, so cakld/kl run exactly as before (no hooks, no overhead).
+    student_hooks = teacher_hooks = None
+    if args.distill_weight > 0 and args.distill_loss == "wasserstein":
+        student_hooks = BlockHiddenStateHooks(accelerator.unwrap_model(model), args.wasserstein_layers)
+        teacher_hooks = BlockHiddenStateHooks(teacher_model, args.wasserstein_layers)
+        print(
+            f"==> Wasserstein hidden-state alignment on blocks {args.wasserstein_layers} "
+            f"(sw_weight={args.sw_weight}, sw_projections={args.sw_projections})"
+        )
+
     if args.warmup_bits > args.bits:
         print(
             f"==> Progressive bit-width: forward starts at {args.warmup_bits}-bit, "
@@ -512,10 +544,11 @@ def main() -> None:
                     kd_loss = cakld_loss(outputs.logits, teacher_outputs.logits, batch["labels"], cakld_gamma)
                 elif args.distill_loss == "kl":
                     kd_loss = kl_distill_loss(outputs.logits, teacher_outputs.logits, batch["labels"])
-                else:  # wasserstein
-                    kd_loss = sliced_wasserstein_distill_loss(
-                        outputs.logits, teacher_outputs.logits, batch["labels"],
-                        num_projections=args.sw_projections, representation=args.sw_representation,
+                else:  # wasserstein: hidden-state SW+MSE, captured by the hooks
+                    # during the student/teacher forwards just above.
+                    kd_loss = combined_block_loss(
+                        student_hooks.captured, teacher_hooks.captured, args.wasserstein_layers,
+                        sw_weight=args.sw_weight, num_projections=args.sw_projections,
                     )
                 loss = hard_loss + args.distill_weight * kd_loss
             else:
@@ -596,6 +629,10 @@ def main() -> None:
             if step >= args.max_steps:
                 done = True
                 break
+
+    if student_hooks is not None:
+        student_hooks.remove()
+        teacher_hooks.remove()
 
     # Make sure export bakes in the FINAL target bit-width, not whatever the
     # last training step happened to be at (they match once training runs past
