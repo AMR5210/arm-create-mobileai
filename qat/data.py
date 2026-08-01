@@ -42,7 +42,7 @@ def load_wikitext2_train_examples(
     max_length: int = 512,
     max_examples: int = 2000,
     seed: int = 0,
-    dataset_name: str = "wikitext",
+    dataset_name: str = "Salesforce/wikitext",
     config: str = "wikitext-2-raw-v1",
 ) -> list[dict]:
     """Plain language-modeling examples from the WikiText-2 *train* split.
@@ -53,6 +53,9 @@ def load_wikitext2_train_examples(
     TRAIN split, never the test split that perplexity is evaluated on, so there
     is no train/eval leakage.
     """
+    # Namespaced repo id ("Salesforce/wikitext"): newer huggingface_hub (1.x)
+    # rejects the legacy canonical id "wikitext" (must be "namespace/name"),
+    # same fix as scripts/prepare_eval_data.py. Override with --wikitext-dataset.
     ds = load_dataset(dataset_name, config, split="train")
     text = "\n".join(row["text"] for row in ds if row["text"].strip())
     ids = tokenizer(text)["input_ids"]

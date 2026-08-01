@@ -152,6 +152,12 @@ def main() -> None:
         "measured on.",
     )
     parser.add_argument(
+        "--wikitext-dataset",
+        default="Salesforce/wikitext",
+        help="HF dataset id for the WikiText-2 train blend. Namespaced by "
+        "default because newer huggingface_hub rejects the bare 'wikitext' id.",
+    )
+    parser.add_argument(
         "--init-mode",
         choices=["roundtrip", "ptq_q2k"],
         default="roundtrip",
@@ -317,7 +323,8 @@ def main() -> None:
     if args.wikitext_frac > 0:
         print(f"==> Domain alignment: blending in WikiText-2 train text (target frac {args.wikitext_frac:.2f})")
         wiki_examples = load_wikitext2_train_examples(
-            tokenizer, max_length=args.max_length, max_examples=args.max_examples
+            tokenizer, max_length=args.max_length, max_examples=args.max_examples,
+            dataset_name=args.wikitext_dataset,
         )
         n_alpaca = len(examples)
         examples = build_blended_examples(examples, wiki_examples, args.wikitext_frac)
