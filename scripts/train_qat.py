@@ -31,6 +31,7 @@ from qat.apply_qat import (  # noqa: E402
 )
 from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.calibrate_clip import calibrate_asymmetric_clipping  # noqa: E402
+from qat.outlier_split import apply_outlier_split, merge_outlier_split  # noqa: E402
 from qat.data import (  # noqa: E402
     build_blended_examples,
     build_supervised_example,
@@ -136,6 +137,27 @@ def main() -> None:
         "that destabilize training -- run scripts/diagnose_qat_grads.py to see "
         "each layer's weight dynamic range and pick them. Example: "
         "--skip-layers layers.0.self_attn.k_proj",
+    )
+    parser.add_argument(
+        "--outlier-split-layers",
+        nargs="+",
+        default=[],
+        help="Substring patterns of outlier-heavy layers to quantize with "
+        "Outlier Channel Splitting (OCS) instead of keeping full-precision via "
+        "--skip-layers. Each matched layer's worst outlier input channel(s) are "
+        "split into two half-magnitude channels (an exact identity, merged back "
+        "before export so the GGUF is standard-shaped), letting the layer be "
+        "quantized at full 2-bit. Empty = off (default). Do NOT also list a "
+        "layer in --skip-layers. Recommended set (from the dynamic-range report): "
+        "layers.{8,16,21,27}.self_attn.k_proj and layers.{2,6,8,18,26,27}.mlp.* "
+        "gate/up/down_proj.",
+    )
+    parser.add_argument(
+        "--outlier-split-channels",
+        type=int,
+        default=1,
+        help="Number of worst outlier input channels to split per matched layer "
+        "(default 1). Each adds one column during training, folded away at merge.",
     )
     parser.add_argument("--dataset", default="tatsu-lab/alpaca")
     parser.add_argument("--max-examples", type=int, default=2000)
@@ -379,6 +401,25 @@ def main() -> None:
         )
         print(f"    calibrated and clamped {len(clipped)} layers")
 
+    # Outlier Channel Splitting (opt-in): split BEFORE apply_qat so the expanded
+    # inner linears get fake-quant-wrapped. Exact identity now; merged back to
+    # standard shape before export. Fully off / no-op when the flag is empty.
+    split_info = []
+    if args.outlier_split_layers:
+        overlap = [p for p in args.outlier_split_layers if p in args.skip_layers]
+        if overlap:
+            raise SystemExit(
+                f"--outlier-split-layers and --skip-layers overlap on {overlap}; a layer "
+                "is either split-quantized OR kept full-precision, not both."
+            )
+        split_info = apply_outlier_split(model, args.outlier_split_layers, args.outlier_split_channels)
+        print(
+            f"==> Outlier Channel Splitting: split {len(split_info)} layer(s), "
+            f"{args.outlier_split_channels} channel(s) each (identity now, merged before export)"
+        )
+        for s in split_info:
+            print(f"    {s['layer']}: split input channels {s['channels']}")
+
     init_desc = (
         "dequantized PTQ-2bit (Q2_K) weights" if args.init_mode == "ptq_q2k"
         else f"{args.init_bits}-bit round-trip"
@@ -564,6 +605,12 @@ def main() -> None:
     print(f"==> Materializing fake-quantized weights ({args.bits}-bit) into plain Linear layers for export")
     unwrapped = accelerator.unwrap_model(model)
     materialize_qat(unwrapped)
+
+    if split_info:
+        # Fold the split channels back so the saved checkpoint has the exact
+        # original tensor shapes -- the exporter/llama.cpp see a standard model.
+        merged = merge_outlier_split(unwrapped)
+        print(f"==> Merged Outlier-Split channels back to standard shape: {len(merged)} layer(s)")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     print(f"==> Saving HF checkpoint to {args.output_dir}")
