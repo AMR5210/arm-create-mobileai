@@ -31,6 +31,7 @@ from qat.apply_qat import (  # noqa: E402
 )
 from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.calibrate_clip import calibrate_asymmetric_clipping  # noqa: E402
+from qat.distill_losses import kl_distill_loss, sliced_wasserstein_distill_loss  # noqa: E402
 from qat.data import (  # noqa: E402
     build_blended_examples,
     build_supervised_example,
@@ -286,7 +287,35 @@ def main() -> None:
         default=10,
         help="Number of forward-only batches used to precompute CAKLD's gamma "
         "coefficient (arXiv:2402.10631 Appendix A.2 uses ten). Only used when "
-        "--distill-weight > 0.",
+        "--distill-weight > 0 and --distill-loss cakld.",
+    )
+    parser.add_argument(
+        "--distill-loss",
+        choices=["cakld", "kl", "wasserstein"],
+        default="cakld",
+        help="Which teacher/student distillation objective (only used when "
+        "--distill-weight > 0). 'cakld' (default, unchanged): confidence-aware "
+        "KL blend. 'kl': standard forward KL(teacher||student). 'wasserstein': "
+        "sliced-Wasserstein distribution-alignment loss (arXiv:2601.07878) -- "
+        "aligns the batch's teacher/student output distributions via random 1D "
+        "projections + sorted (closed-form) Wasserstein, which that paper reports "
+        "beats KL-based distillation for ultra-low-bit quantization.",
+    )
+    parser.add_argument(
+        "--sw-projections",
+        type=int,
+        default=64,
+        help="Number of random 1D projections for --distill-loss wasserstein.",
+    )
+    parser.add_argument(
+        "--sw-representation",
+        choices=["prob", "logprob", "logit"],
+        default="prob",
+        help="Output-space representation projected by the sliced-Wasserstein "
+        "loss: softmax probs (default), log-probs, or raw logits. NOTE: the exact "
+        "choice in arXiv:2601.07878 was not verifiable here (paper fetch blocked); "
+        "'prob' is bounded/stable but small-magnitude, so wasserstein may need a "
+        "larger --distill-weight than cakld. Confirm against the paper.",
     )
     parser.add_argument(
         "--calibrate-clip",
@@ -403,14 +432,18 @@ def main() -> None:
     teacher_model = None
     cakld_gamma = None
     if args.distill_weight > 0:
-        print(f"==> Loading frozen teacher from {args.base_model} (distill_weight={args.distill_weight})")
+        print(
+            f"==> Loading frozen teacher from {args.base_model} "
+            f"(distill_weight={args.distill_weight}, distill_loss={args.distill_loss})"
+        )
         teacher_model = AutoModelForCausalLM.from_pretrained(
             args.base_model, dtype=torch.float32, attn_implementation=safe_attn_implementation()
         ).to(device)
         teacher_model.eval()
         teacher_model.requires_grad_(False)
-        cakld_gamma = precompute_cakld_gamma(teacher_model, dataloader, device, n_batches=args.cakld_calib_batches)
-        print(f"    CAKLD gamma (teacher confidence on response tokens): {cakld_gamma:.4f}")
+        if args.distill_loss == "cakld":
+            cakld_gamma = precompute_cakld_gamma(teacher_model, dataloader, device, n_batches=args.cakld_calib_batches)
+            print(f"    CAKLD gamma (teacher confidence on response tokens): {cakld_gamma:.4f}")
 
     if args.gradient_checkpointing:
         model.config.use_cache = False
@@ -475,7 +508,15 @@ def main() -> None:
                     teacher_outputs = teacher_model(
                         input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
                     )
-                kd_loss = cakld_loss(outputs.logits, teacher_outputs.logits, batch["labels"], cakld_gamma)
+                if args.distill_loss == "cakld":
+                    kd_loss = cakld_loss(outputs.logits, teacher_outputs.logits, batch["labels"], cakld_gamma)
+                elif args.distill_loss == "kl":
+                    kd_loss = kl_distill_loss(outputs.logits, teacher_outputs.logits, batch["labels"])
+                else:  # wasserstein
+                    kd_loss = sliced_wasserstein_distill_loss(
+                        outputs.logits, teacher_outputs.logits, batch["labels"],
+                        num_projections=args.sw_projections, representation=args.sw_representation,
+                    )
                 loss = hard_loss + args.distill_weight * kd_loss
             else:
                 loss = hard_loss
