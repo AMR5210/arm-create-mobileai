@@ -26,6 +26,7 @@ def apply_qat(
     init_bits: int = 4,
     skip_patterns=DEFAULT_SKIP_PATTERNS,
     extra_skip_patterns=(),
+    init_mode: str = "roundtrip",
 ) -> list[str]:
     """Replaces eligible nn.Linear submodules with FakeQuantLinear, in place.
     Returns the list of replaced module names.
@@ -37,6 +38,10 @@ def apply_qat(
     enough under low-bit quantization that gradients explode; excluding just
     those few layers is standard practice (cf. LLM-QAT keeping sensitive
     layers higher-precision) and costs little model size.
+
+    `init_mode` selects how the trainable shadow weights are initialized --
+    "roundtrip" (INT4 fake-quant round-trip) or "ptq_q2k" (dequantized real
+    PTQ-2bit weights). See FakeQuantLinear.from_linear.
     """
     all_skip = tuple(skip_patterns) + tuple(extra_skip_patterns)
     replaced = []
@@ -45,11 +50,23 @@ def apply_qat(
             full_name = f"{parent_name}.{child_name}" if parent_name else child_name
             if isinstance(child, nn.Linear) and not _should_skip(full_name, all_skip):
                 qlinear = FakeQuantLinear.from_linear(
-                    child, bits=bits, group_size=group_size, init_bits=init_bits
+                    child, bits=bits, group_size=group_size, init_bits=init_bits,
+                    init_mode=init_mode,
                 )
                 setattr(parent, child_name, qlinear)
                 replaced.append(full_name)
     return replaced
+
+
+def init_mode_breakdown(model: nn.Module) -> dict:
+    """Counts how each FakeQuantLinear was actually initialized (e.g. how many
+    ptq_q2k requests fell back to roundtrip for non-256-divisible layers)."""
+    counts: dict = {}
+    for module in model.modules():
+        if isinstance(module, FakeQuantLinear):
+            used = getattr(module, "init_mode_used", "roundtrip")
+            counts[used] = counts.get(used, 0) + 1
+    return counts
 
 
 def weight_dynamic_range(model: nn.Module) -> list[tuple]:

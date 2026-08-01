@@ -1,4 +1,16 @@
-"""Loads and formats the Alpaca instruction dataset for the QAT fine-tune."""
+"""Loads and formats QAT fine-tuning data.
+
+Two sources, blended (see build_blended_examples):
+  - Alpaca instruction data (prompt masked out of the loss).
+  - WikiText-2 *train* split, plain language-modeling text (every token
+    supervised). Mixing the eval domain into training -- WikiText-2 is also the
+    perplexity eval corpus -- closes the instruction-only-train / wikitext-eval
+    domain mismatch. Recent low-bit-QAT work on Qwen3 reports meaningful
+    perplexity gains from aligning the QAT data with the eval domain rather than
+    training on instructions alone.
+"""
+import random
+
 import torch
 from datasets import load_dataset
 
@@ -23,6 +35,65 @@ def load_alpaca_examples(max_examples: int = 2000, seed: int = 0, dataset_name: 
     ds = load_dataset(dataset_name, split="train")
     ds = ds.shuffle(seed=seed)
     return ds.select(range(min(max_examples, len(ds))))
+
+
+def load_wikitext2_train_examples(
+    tokenizer,
+    max_length: int = 512,
+    max_examples: int = 2000,
+    seed: int = 0,
+    dataset_name: str = "wikitext",
+    config: str = "wikitext-2-raw-v1",
+) -> list[dict]:
+    """Plain language-modeling examples from the WikiText-2 *train* split.
+
+    The whole corpus is concatenated and cut into contiguous ``max_length``
+    token chunks; every token is a training target (labels = input_ids, nothing
+    masked), unlike the Alpaca examples whose prompt is masked out. Uses the
+    TRAIN split, never the test split that perplexity is evaluated on, so there
+    is no train/eval leakage.
+    """
+    ds = load_dataset(dataset_name, config, split="train")
+    text = "\n".join(row["text"] for row in ds if row["text"].strip())
+    ids = tokenizer(text)["input_ids"]
+
+    examples = []
+    for start in range(0, len(ids) - 1, max_length):
+        chunk = ids[start : start + max_length]
+        if len(chunk) < 2:  # need at least one (input, next-token) pair
+            continue
+        examples.append(
+            {
+                "input_ids": chunk,
+                "attention_mask": [1] * len(chunk),
+                "labels": list(chunk),  # plain LM: supervise every token
+            }
+        )
+        if len(examples) >= max_examples:
+            break
+    return examples
+
+
+def build_blended_examples(alpaca_examples: list[dict], wiki_examples: list[dict],
+                           wikitext_frac: float, seed: int = 0) -> list[dict]:
+    """Blend supervised Alpaca and WikiText-2 examples so that a ``wikitext_frac``
+    fraction of the returned examples are WikiText-2, then shuffle them together.
+
+    Keeps all Alpaca examples and takes as many WikiText-2 examples as the ratio
+    calls for (capped by how many are available); if WikiText-2 is the limiting
+    side, the realized fraction is reported by the caller.
+    """
+    n_alpaca = len(alpaca_examples)
+    if wikitext_frac <= 0 or not wiki_examples:
+        return list(alpaca_examples)
+    if wikitext_frac >= 1:
+        return list(wiki_examples)
+    # want n_wiki / (n_alpaca + n_wiki) == wikitext_frac
+    n_wiki_target = round(n_alpaca * wikitext_frac / (1 - wikitext_frac))
+    wiki = list(wiki_examples[:n_wiki_target])
+    blended = list(alpaca_examples) + wiki
+    random.Random(seed).shuffle(blended)
+    return blended
 
 
 def _common_prefix_len(a: list[int], b: list[int]) -> int:

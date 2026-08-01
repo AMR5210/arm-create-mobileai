@@ -22,10 +22,22 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from qat.apply_qat import apply_qat, fake_quantized_state_dict, materialize_qat, set_qat_bits  # noqa: E402
+from qat.apply_qat import (  # noqa: E402
+    apply_qat,
+    fake_quantized_state_dict,
+    init_mode_breakdown,
+    materialize_qat,
+    set_qat_bits,
+)
 from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.calibrate_clip import calibrate_asymmetric_clipping  # noqa: E402
-from qat.data import build_supervised_example, collate_fn, load_alpaca_examples  # noqa: E402
+from qat.data import (  # noqa: E402
+    build_blended_examples,
+    build_supervised_example,
+    collate_fn,
+    load_alpaca_examples,
+    load_wikitext2_train_examples,
+)
 from qat.eval_utils import compute_perplexity  # noqa: E402
 
 
@@ -127,6 +139,31 @@ def main() -> None:
     )
     parser.add_argument("--dataset", default="tatsu-lab/alpaca")
     parser.add_argument("--max-examples", type=int, default=2000)
+    parser.add_argument(
+        "--wikitext-frac",
+        type=float,
+        default=0.5,
+        help="Fraction of QAT training examples drawn from the WikiText-2 TRAIN "
+        "split (plain LM text, every token supervised), the rest from Alpaca "
+        "(instructions, prompt masked). Default 0.5 = a 50/50 blend, aligning "
+        "the training domain with the WikiText-2 perplexity eval instead of "
+        "training on instructions alone. 0 disables (Alpaca only, previous "
+        "behavior). Uses the train split, never the test split perplexity is "
+        "measured on.",
+    )
+    parser.add_argument(
+        "--init-mode",
+        choices=["roundtrip", "ptq_q2k"],
+        default="roundtrip",
+        help="How to initialize the trainable shadow weights. 'roundtrip' "
+        "(default, previous behavior): an INT4 fake-quant round-trip of the "
+        "fp16 weights. 'ptq_q2k': the actual dequantized PTQ-2bit (GGUF Q2_K) "
+        "weights, via the same Q2_K quantiser the export/PTQ baseline uses -- "
+        "so QAT starts exactly where the deployed PTQ checkpoint sits, which "
+        "low-bit-QAT research (e.g. BitDistiller) reports converges better. "
+        "Layers Q2_K can't encode (in_features not a multiple of 256) fall back "
+        "to roundtrip automatically.",
+    )
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-5)
@@ -277,6 +314,22 @@ def main() -> None:
     raw_examples = load_alpaca_examples(max_examples=args.max_examples, dataset_name=args.dataset)
     examples = [build_supervised_example(ex, tokenizer, args.max_length) for ex in raw_examples]
 
+    if args.wikitext_frac > 0:
+        print(f"==> Domain alignment: blending in WikiText-2 train text (target frac {args.wikitext_frac:.2f})")
+        wiki_examples = load_wikitext2_train_examples(
+            tokenizer, max_length=args.max_length, max_examples=args.max_examples
+        )
+        n_alpaca = len(examples)
+        examples = build_blended_examples(examples, wiki_examples, args.wikitext_frac)
+        n_wiki = len(examples) - n_alpaca
+        realized = n_wiki / len(examples) if examples else 0.0
+        print(
+            f"    blended {n_alpaca} Alpaca + {n_wiki} WikiText-2 = {len(examples)} examples "
+            f"(realized WikiText-2 frac {realized:.2f}"
+            + ("" if abs(realized - args.wikitext_frac) < 0.02 else ", capped by available WikiText-2")
+            + ")"
+        )
+
     # If an example's instruction+input is long enough that truncating
     # prompt+response to --max-length cuts off the response entirely, every
     # label ends up masked (-100) with nothing left to supervise. Cross-entropy
@@ -307,18 +360,25 @@ def main() -> None:
         )
         print(f"    calibrated and clamped {len(clipped)} layers")
 
+    init_desc = (
+        "dequantized PTQ-2bit (Q2_K) weights" if args.init_mode == "ptq_q2k"
+        else f"{args.init_bits}-bit round-trip"
+    )
     print(
         f"==> Wrapping linear layers with fake-quantization "
-        f"(target {args.bits}-bit, initialized from {args.init_bits}-bit rounding, "
+        f"(target {args.bits}-bit, initialized from {init_desc}, "
         f"group size {args.group_size})"
     )
     replaced = apply_qat(
         model, bits=args.bits, group_size=args.group_size, init_bits=args.init_bits,
-        extra_skip_patterns=tuple(args.skip_layers),
+        extra_skip_patterns=tuple(args.skip_layers), init_mode=args.init_mode,
     )
     print(f"    wrapped {len(replaced)} linear layers")
     if args.skip_layers:
         print(f"    kept at full precision (mixed-precision): {', '.join(args.skip_layers)}")
+    if args.init_mode == "ptq_q2k":
+        breakdown = init_mode_breakdown(model)
+        print(f"    shadow-weight init: {breakdown} (ptq_q2k = dequantized real PTQ-2bit weights)")
 
     teacher_model = None
     cakld_gamma = None
