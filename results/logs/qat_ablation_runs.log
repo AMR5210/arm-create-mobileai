@@ -261,3 +261,114 @@ step 1000/1000  loss=3.7287  hard_loss=3.2966  kd_loss=0.8643  wikitext2_ppl=20.
 ==> Saving HF checkpoint to models/qwen3-0.6b-qat-seq-roundtrip-hf
 ==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
 
+================================================================
+== Wasserstein hidden-state distillation sweep (repo 699d0ac)
+================================================================
+---------------- wasserstein distill-weight 0.5 (kd share 69-74%) ----------------
+==> Loading 2000 examples from tatsu-lab/alpaca
+==> Domain alignment: blending in WikiText-2 train text (target frac 0.50)
+    blended 2000 Alpaca + 2000 WikiText-2 = 4000 examples (realized WikiText-2 frac 0.50)
+==> Wrapping linear layers with fake-quantization (target 2-bit, initialized from dequantized PTQ-2bit (Q2_K) weights, group size 16)
+    wrapped 187 linear layers  (quant-function: affine)
+    shadow-weight init: {'ptq_q2k': 187} (ptq_q2k = dequantized real PTQ-2bit weights)
+==> Loading frozen teacher from models/qwen3-0.6b-hf (distill_weight=0.5, distill_loss=wasserstein)
+==> Wasserstein hidden-state alignment on blocks [2, 6, 8, 16, 18, 21, 26, 27] (sw_weight=0.1, sw_projections=256)
+==> Progressive bit-width: forward starts at 4-bit, annealing to 2-bit over 150 steps
+==> WikiText-2 perplexity right after fake-quant wrapping (pre fine-tune)
+    perplexity: 16813.9512
+step 50/1000  loss=15.1953  hard_loss=4.8068  kd_loss=20.7770  wikitext2_ppl=73.1726  bits=3  lr=1.00e-05  grad_norm=135.003
+step 100/1000  loss=12.9386  hard_loss=4.0451  kd_loss=17.7869  wikitext2_ppl=48.0620  bits=3  lr=9.47e-06  grad_norm=46.351
+step 150/1000  loss=9.8479  hard_loss=3.0573  kd_loss=13.5813  wikitext2_ppl=29.7155  bits=2  lr=8.95e-06  grad_norm=49.197
+step 200/1000  loss=9.6039  hard_loss=3.5854  kd_loss=12.0371  wikitext2_ppl=27.0183  bits=2  lr=8.42e-06  grad_norm=31.006
+step 250/1000  loss=9.1614  hard_loss=3.9177  kd_loss=10.4873  wikitext2_ppl=25.8131  bits=2  lr=7.89e-06  grad_norm=29.925
+step 300/1000  loss=9.3116  hard_loss=4.1551  kd_loss=10.3131  wikitext2_ppl=25.1668  bits=2  lr=7.37e-06  grad_norm=39.170
+step 350/1000  loss=8.3948  hard_loss=3.3397  kd_loss=10.1103  wikitext2_ppl=24.4376  bits=2  lr=6.84e-06  grad_norm=37.252
+step 400/1000  loss=8.5562  hard_loss=3.5385  kd_loss=10.0353  wikitext2_ppl=24.1163  bits=2  lr=6.32e-06  grad_norm=27.701
+step 450/1000  loss=9.0711  hard_loss=3.5637  kd_loss=11.0147  wikitext2_ppl=23.4278  bits=2  lr=5.79e-06  grad_norm=42.223
+step 500/1000  loss=8.6172  hard_loss=3.0689  kd_loss=11.0967  wikitext2_ppl=23.0642  bits=2  lr=5.26e-06  grad_norm=29.540
+step 550/1000  loss=8.4188  hard_loss=3.3128  kd_loss=10.2119  wikitext2_ppl=22.9753  bits=2  lr=4.74e-06  grad_norm=41.495
+step 600/1000  loss=8.2394  hard_loss=2.9585  kd_loss=10.5619  wikitext2_ppl=22.8453  bits=2  lr=4.21e-06  grad_norm=54.828
+step 650/1000  loss=8.0604  hard_loss=3.2553  kd_loss=9.6102  wikitext2_ppl=22.3083  bits=2  lr=3.68e-06  grad_norm=28.376
+step 700/1000  loss=8.3265  hard_loss=3.6019  kd_loss=9.4491  wikitext2_ppl=22.1739  bits=2  lr=3.16e-06  grad_norm=21.717
+step 750/1000  loss=7.8354  hard_loss=3.3043  kd_loss=9.0624  wikitext2_ppl=22.1427  bits=2  lr=2.63e-06  grad_norm=24.317
+step 800/1000  loss=8.4715  hard_loss=3.6993  kd_loss=9.5445  wikitext2_ppl=21.9706  bits=2  lr=2.11e-06  grad_norm=29.821
+step 850/1000  loss=8.0825  hard_loss=3.4124  kd_loss=9.3401  wikitext2_ppl=21.8658  bits=2  lr=1.58e-06  grad_norm=25.513
+step 900/1000  loss=7.8236  hard_loss=3.1291  kd_loss=9.3890  wikitext2_ppl=21.7412  bits=2  lr=1.05e-06  grad_norm=26.187
+step 950/1000  loss=7.9052  hard_loss=2.9530  kd_loss=9.9043  wikitext2_ppl=21.7158  bits=2  lr=5.26e-07  grad_norm=32.554
+step 1000/1000  loss=8.0826  hard_loss=3.5120  kd_loss=9.1412  wikitext2_ppl=21.6378  bits=2  lr=0.00e+00  grad_norm=28.831
+==> Materializing fake-quantized weights (2-bit) into plain Linear layers for export
+==> Saving HF checkpoint to models/qwen3-0.6b-qat-wasserstein-hf
+==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
+
+---------------- wasserstein distill-weight 0.05 (kd share 13%) ----------------
+==> Loading 2000 examples from tatsu-lab/alpaca
+==> Domain alignment: blending in WikiText-2 train text (target frac 0.50)
+    blended 2000 Alpaca + 2000 WikiText-2 = 4000 examples (realized WikiText-2 frac 0.50)
+==> Wrapping linear layers with fake-quantization (target 2-bit, initialized from dequantized PTQ-2bit (Q2_K) weights, group size 16)
+    wrapped 187 linear layers  (quant-function: affine)
+    shadow-weight init: {'ptq_q2k': 187} (ptq_q2k = dequantized real PTQ-2bit weights)
+==> Loading frozen teacher from models/qwen3-0.6b-hf (distill_weight=0.05, distill_loss=wasserstein)
+==> Wasserstein hidden-state alignment on blocks [2, 6, 8, 16, 18, 21, 26, 27] (sw_weight=0.1, sw_projections=256)
+==> Progressive bit-width: forward starts at 4-bit, annealing to 2-bit over 150 steps
+==> WikiText-2 perplexity right after fake-quant wrapping (pre fine-tune)
+    perplexity: 16813.9512
+step 50/1000  loss=5.2107  hard_loss=4.1319  kd_loss=21.5760  wikitext2_ppl=58.4288  bits=3  lr=1.00e-05  grad_norm=24.940
+step 100/1000  loss=4.2591  hard_loss=3.3035  kd_loss=19.1131  wikitext2_ppl=41.3954  bits=3  lr=9.47e-06  grad_norm=28.299
+step 150/1000  loss=3.9256  hard_loss=3.1292  kd_loss=15.9263  wikitext2_ppl=26.6927  bits=2  lr=8.95e-06  grad_norm=16.304
+step 200/1000  loss=4.3036  hard_loss=3.5507  kd_loss=15.0584  wikitext2_ppl=24.5359  bits=2  lr=8.42e-06  grad_norm=13.243
+step 250/1000  loss=4.3361  hard_loss=3.6030  kd_loss=14.6625  wikitext2_ppl=23.6645  bits=2  lr=7.89e-06  grad_norm=11.968
+step 300/1000  loss=4.0933  hard_loss=3.4887  kd_loss=12.0907  wikitext2_ppl=22.9946  bits=2  lr=7.37e-06  grad_norm=18.001
+step 350/1000  loss=4.3729  hard_loss=3.7449  kd_loss=12.5587  wikitext2_ppl=22.3600  bits=2  lr=6.84e-06  grad_norm=13.679
+step 400/1000  loss=4.0562  hard_loss=3.4008  kd_loss=13.1087  wikitext2_ppl=21.8677  bits=2  lr=6.32e-06  grad_norm=10.386
+step 450/1000  loss=3.2382  hard_loss=2.6030  kd_loss=12.7040  wikitext2_ppl=21.4938  bits=2  lr=5.79e-06  grad_norm=33.763
+step 500/1000  loss=3.5760  hard_loss=2.9942  kd_loss=11.6372  wikitext2_ppl=21.1463  bits=2  lr=5.26e-06  grad_norm=13.731
+step 550/1000  loss=3.3815  hard_loss=2.7312  kd_loss=13.0058  wikitext2_ppl=20.9469  bits=2  lr=4.74e-06  grad_norm=16.351
+step 600/1000  loss=2.5148  hard_loss=1.9640  kd_loss=11.0168  wikitext2_ppl=20.7225  bits=2  lr=4.21e-06  grad_norm=19.637
+step 650/1000  loss=3.6914  hard_loss=3.0419  kd_loss=12.9895  wikitext2_ppl=20.6323  bits=2  lr=3.68e-06  grad_norm=12.049
+step 700/1000  loss=3.6405  hard_loss=3.0778  kd_loss=11.2539  wikitext2_ppl=20.4567  bits=2  lr=3.16e-06  grad_norm=15.279
+step 750/1000  loss=3.4294  hard_loss=2.8086  kd_loss=12.4143  wikitext2_ppl=20.1781  bits=2  lr=2.63e-06  grad_norm=10.764
+step 800/1000  loss=3.4931  hard_loss=2.9094  kd_loss=11.6741  wikitext2_ppl=20.1272  bits=2  lr=2.11e-06  grad_norm=11.140
+step 850/1000  loss=2.2916  hard_loss=1.6620  kd_loss=12.5921  wikitext2_ppl=20.1355  bits=2  lr=1.58e-06  grad_norm=16.674
+step 900/1000  loss=2.7401  hard_loss=2.1490  kd_loss=11.8220  wikitext2_ppl=20.0287  bits=2  lr=1.05e-06  grad_norm=28.590
+step 950/1000  loss=3.3830  hard_loss=2.8076  kd_loss=11.5094  wikitext2_ppl=19.9125  bits=2  lr=5.26e-07  grad_norm=11.052
+step 1000/1000  loss=4.0749  hard_loss=3.5355  kd_loss=10.7891  wikitext2_ppl=19.9193  bits=2  lr=0.00e+00  grad_norm=16.628
+==> Materializing fake-quantized weights (2-bit) into plain Linear layers for export
+==> Saving HF checkpoint to models/qwen3-0.6b-qat-wass-dw005-hf
+==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
+
+---------------- wasserstein distill-weight 0.1 (kd share 31%) ----------------
+==> Loading 2000 examples from tatsu-lab/alpaca
+==> Domain alignment: blending in WikiText-2 train text (target frac 0.50)
+    blended 2000 Alpaca + 2000 WikiText-2 = 4000 examples (realized WikiText-2 frac 0.50)
+==> Wrapping linear layers with fake-quantization (target 2-bit, initialized from dequantized PTQ-2bit (Q2_K) weights, group size 16)
+    wrapped 187 linear layers  (quant-function: affine)
+    shadow-weight init: {'ptq_q2k': 187} (ptq_q2k = dequantized real PTQ-2bit weights)
+==> Loading frozen teacher from models/qwen3-0.6b-hf (distill_weight=0.1, distill_loss=wasserstein)
+==> Wasserstein hidden-state alignment on blocks [2, 6, 8, 16, 18, 21, 26, 27] (sw_weight=0.1, sw_projections=256)
+==> Progressive bit-width: forward starts at 4-bit, annealing to 2-bit over 150 steps
+==> WikiText-2 perplexity right after fake-quant wrapping (pre fine-tune)
+    perplexity: 16813.9512
+step 50/1000  loss=6.8638  hard_loss=4.8146  kd_loss=20.4927  wikitext2_ppl=58.6527  bits=3  lr=1.00e-05  grad_norm=34.491
+step 100/1000  loss=5.5613  hard_loss=3.8135  kd_loss=17.4781  wikitext2_ppl=40.9318  bits=3  lr=9.47e-06  grad_norm=18.265
+step 150/1000  loss=3.9548  hard_loss=2.3906  kd_loss=15.6419  wikitext2_ppl=27.2007  bits=2  lr=8.95e-06  grad_norm=33.639
+step 200/1000  loss=4.7589  hard_loss=3.4701  kd_loss=12.8880  wikitext2_ppl=24.5830  bits=2  lr=8.42e-06  grad_norm=14.640
+step 250/1000  loss=4.7488  hard_loss=3.4268  kd_loss=13.2192  wikitext2_ppl=23.8306  bits=2  lr=7.89e-06  grad_norm=15.459
+step 300/1000  loss=4.7744  hard_loss=3.5450  kd_loss=12.2933  wikitext2_ppl=23.1728  bits=2  lr=7.37e-06  grad_norm=15.895
+step 350/1000  loss=4.5932  hard_loss=3.4189  kd_loss=11.7436  wikitext2_ppl=22.5155  bits=2  lr=6.84e-06  grad_norm=17.175
+step 400/1000  loss=4.7764  hard_loss=3.6437  kd_loss=11.3263  wikitext2_ppl=22.1774  bits=2  lr=6.32e-06  grad_norm=14.547
+step 450/1000  loss=4.5060  hard_loss=3.2985  kd_loss=12.0745  wikitext2_ppl=21.5478  bits=2  lr=5.79e-06  grad_norm=10.569
+step 500/1000  loss=4.6211  hard_loss=3.5168  kd_loss=11.0431  wikitext2_ppl=21.5003  bits=2  lr=5.26e-06  grad_norm=13.843
+step 550/1000  loss=4.1708  hard_loss=2.9490  kd_loss=12.2181  wikitext2_ppl=21.2050  bits=2  lr=4.74e-06  grad_norm=16.129
+step 600/1000  loss=4.6744  hard_loss=3.5516  kd_loss=11.2274  wikitext2_ppl=20.9205  bits=2  lr=4.21e-06  grad_norm=10.649
+step 650/1000  loss=4.0655  hard_loss=2.8189  kd_loss=12.4659  wikitext2_ppl=20.7398  bits=2  lr=3.68e-06  grad_norm=16.717
+step 700/1000  loss=3.5679  hard_loss=2.5348  kd_loss=10.3317  wikitext2_ppl=20.5823  bits=2  lr=3.16e-06  grad_norm=13.792
+step 750/1000  loss=4.5105  hard_loss=3.3079  kd_loss=12.0259  wikitext2_ppl=20.5300  bits=2  lr=2.63e-06  grad_norm=18.664
+step 800/1000  loss=4.4269  hard_loss=3.2280  kd_loss=11.9890  wikitext2_ppl=20.3955  bits=2  lr=2.11e-06  grad_norm=20.789
+step 850/1000  loss=2.5838  hard_loss=1.3047  kd_loss=12.7912  wikitext2_ppl=20.3073  bits=2  lr=1.58e-06  grad_norm=52.056
+step 900/1000  loss=3.9561  hard_loss=3.0299  kd_loss=9.2621  wikitext2_ppl=20.2512  bits=2  lr=1.05e-06  grad_norm=12.445
+step 950/1000  loss=4.9451  hard_loss=3.6503  kd_loss=12.9482  wikitext2_ppl=20.2309  bits=2  lr=5.26e-07  grad_norm=16.503
+step 1000/1000  loss=4.1644  hard_loss=2.8892  kd_loss=12.7526  wikitext2_ppl=20.1697  bits=2  lr=0.00e+00  grad_norm=17.033
+==> Materializing fake-quantized weights (2-bit) into plain Linear layers for export
+==> Saving HF checkpoint to models/qwen3-0.6b-qat-wass-dw01-hf
+==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
+

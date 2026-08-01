@@ -15,7 +15,8 @@
     "perplexity_device": "CPU, 20 cores",
     "torch": "2.10.0+rocm7.2.4",
     "transformers": "5.14.1",
-    "repo_commit": "6cd451e"
+    "repo_commit": "699d0ac",
+    "_repo_commit_note": "Latest code state. Individual rows were produced at whatever commit was current when they ran; rows carry a code_commit field where it differs materially (the SEQ and Wasserstein rows)."
   },
   "base_model": "Qwen/Qwen3-0.6B",
   "common_training_config": {
@@ -116,6 +117,57 @@
       "role": "CONTROL. Isolates the bit-annealing schedule from the SEQ change, which otherwise moved together. Result: annealing is a no-op (see analysis.bit_annealing_is_a_noop), so the SEQ rows differ from affine only by the quant function."
     },
     {
+      "id": "qat_q2k_wasserstein_dw005",
+      "label": "QAT Q2_K, affine, Wasserstein hidden-state distillation, distill-weight 0.05",
+      "ppl": 27.4029,
+      "stderr": 0.22415,
+      "measured": true,
+      "quant_function": "affine",
+      "distill_loss": "wasserstein",
+      "distill_weight": 0.05,
+      "kd_share_of_total_loss": "13%",
+      "bit_schedule": "anneal_4_to_2_over_150",
+      "code_commit": "699d0ac",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "--distill-loss wasserstein --distill-weight 0.05 --sw-weight 0.1 --sw-projections 256 --wasserstein-layers 2 6 8 16 18 21 26 27 --init-mode ptq_q2k --wikitext-frac 0.5 --group-size 16, 9 skip-layers",
+      "role": "Best of the Wasserstein sweep, and scale-matched to CAKLD's loss share. Still loses to CAKLD's 26.9519. See analysis.wasserstein_evaluation."
+    },
+    {
+      "id": "qat_q2k_wasserstein_dw01",
+      "label": "QAT Q2_K, affine, Wasserstein hidden-state distillation, distill-weight 0.1",
+      "ppl": 28.0482,
+      "stderr": 0.22905,
+      "measured": true,
+      "quant_function": "affine",
+      "distill_loss": "wasserstein",
+      "distill_weight": 0.1,
+      "kd_share_of_total_loss": "31%",
+      "bit_schedule": "anneal_4_to_2_over_150",
+      "code_commit": "699d0ac",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "identical to qat_q2k_wasserstein_dw005 except --distill-weight 0.1",
+      "role": "Middle point of the Wasserstein distill-weight sweep."
+    },
+    {
+      "id": "qat_q2k_wasserstein_dw05",
+      "label": "QAT Q2_K, affine, Wasserstein hidden-state distillation, distill-weight 0.5",
+      "ppl": 30.7124,
+      "stderr": 0.25661,
+      "measured": true,
+      "quant_function": "affine",
+      "distill_loss": "wasserstein",
+      "distill_weight": 0.5,
+      "kd_share_of_total_loss": "69-74%",
+      "bit_schedule": "anneal_4_to_2_over_150",
+      "code_commit": "699d0ac",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "identical to qat_q2k_wasserstein_dw005 except --distill-weight 0.5",
+      "role": "FIRST Wasserstein run, at the same nominal weight CAKLD uses. That match is misleading -- see analysis.wasserstein_evaluation.weight_scale_confound: at 0.5 the Wasserstein term is 69-74% of total loss versus CAKLD's 10-20%, so this run measured a Wasserstein-DOMINATED objective, not a like-for-like swap. Superseded as the fair comparison by the dw=0.05 row."
+    },
+    {
       "id": "qat_q2k_seq_ptq_init",
       "label": "QAT Q2_K, SEQ quant-function, ptq_q2k init, fixed 2-bit",
       "ppl": 39.6654,
@@ -199,6 +251,23 @@
       "verdict": "NOT a demonstrated win. SEQ is nominally 0.31 better, but the CIs overlap ([26.378, 26.810] vs [26.686, 27.124]). Note also that llama-perplexity's stderr is a within-run estimate over chunks; it does not capture seed-to-seed variance between two separate training runs, so the true uncertainty on this comparison is wider than the intervals suggest. Read this as a tie. The paper's claimed 2-bit advantage over LSQ-style quantization is neither reproduced nor refuted here.",
       "init_sensitivity_is_the_real_finding": "SEQ is extremely sensitive to shadow-weight init: 39.67 with ptq_q2k vs 26.594 with roundtrip, a 1.49x swing from the init mode alone, with everything else identical. An earlier reading of the ptq_q2k number alone suggested 'SEQ is 1.47x worse than affine'; that conclusion was an artifact of the init pairing, not a property of SEQ. ParetoQ initializes from fp weights, which roundtrip approximates and ptq_q2k does not.",
       "export_penalty_is_not_differential": "SEQ's Q2_K round-trip error on a sampled tensor is higher than affine's (3.03% vs 1.46%), but end-to-end the proxy->GGUF degradation is nearly identical (SEQ 29.85->39.67 = 1.33x; affine 19.64->26.91 = 1.37x). The export path does not penalize SEQ disproportionately."
+    },
+    "wasserstein_evaluation": {
+      "note": "Sliced-Wasserstein + MSE hidden-state block alignment (arXiv:2601.07878, --distill-loss wasserstein) evaluated against CAKLD as the distillation objective. CLOSED: neither the initial run nor the scale-matched sweep beat CAKLD, and no further variations will be run on this project.",
+      "verdict": "CAKLD wins. Best Wasserstein result is 27.4029 (distill-weight 0.05) vs CAKLD's 26.9519. The intervals [27.179, 27.627] and [26.732, 27.171] do not overlap, though only barely -- they are adjacent. So this is a real but small loss, not a rout.",
+      "sweep": [
+        {"distill_weight": 0.05, "kd_share": "13%", "ppl": 27.4029, "training_proxy": 19.9193},
+        {"distill_weight": 0.1, "kd_share": "31%", "ppl": 28.0482, "training_proxy": 20.1697},
+        {"distill_weight": 0.5, "kd_share": "69-74%", "ppl": 30.7124, "training_proxy": 21.6378}
+      ],
+      "monotone_trend": "Quality degrades monotonically as the Wasserstein weight rises (27.40 -> 28.05 -> 30.71). The best tested weight is the smallest one, so within the range tested the term is a net negative at every setting. CAUTION: a distill-weight 0 point was NOT run, so this does not establish that the optimum is at zero -- only that quality is decreasing in weight across the three points measured.",
+      "weight_scale_confound": {
+        "why_the_first_run_was_not_a_fair_test": "The first Wasserstein run reused CAKLD's --distill-weight 0.5. That looks like a controlled swap but is not: the Wasserstein term is an unnormalized hidden-state MSE whose natural magnitude (kd_loss ~19-23) is an order of magnitude larger than CAKLD's KL-in-nats (kd_loss ~0.8-1.9). At the same nominal weight it therefore took 69-74% of the total loss where CAKLD takes 10-20% -- roughly a 5x shift in the task/distillation balance. That run measured 'Wasserstein-dominated training vs CAKLD-as-mild-regularizer', not the two objectives head to head.",
+        "how_it_was_resolved": "Re-ran at distill-weight 0.05 and 0.1, which bring the Wasserstein share to 13% and 31% -- 0.05 lands inside CAKLD's 10-20% band. With the scale matched, Wasserstein still loses, so the negative result is not an artifact of the weight.",
+        "generalizable_lesson": "--distill-weight is NOT comparable across --distill-loss choices. Any future distillation objective added to this repo needs its loss share checked against CAKLD's 10-20% before its weight is treated as equivalent."
+      },
+      "export_penalty_is_not_differential": "proxy -> GGUF degradation is 1.42x for Wasserstein dw=0.5 and 1.37x for CAKLD, so the export path does not disadvantage Wasserstein; its deficit is already present in training.",
+      "run_health": "All four Wasserstein runs (100-step crash-check plus three 1000-step runs) completed with zero non-finite loss/gradient events and zero skipped updates. kd_loss started well above zero (22.95) and fell monotonically (to 9.14), confirming the student was genuinely quantized and the objective was actually optimizing. Gradient norms at dw=0.5 were high (157 falling to 29, vs ~10-50 for CAKLD), consistent with the loss-scale imbalance; they normalized at the lower weights."
     },
     "seq_alpha_positivity_bug": {
       "note": "Found while verifying SEQ's learnable alpha actually trains. Fixed in commit 6cd451e.",
