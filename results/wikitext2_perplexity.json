@@ -15,7 +15,7 @@
     "perplexity_device": "CPU, 20 cores",
     "torch": "2.10.0+rocm7.2.4",
     "transformers": "5.14.1",
-    "repo_commit": "1749dfe"
+    "repo_commit": "6cd451e"
   },
   "base_model": "Qwen/Qwen3-0.6B",
   "common_training_config": {
@@ -28,6 +28,7 @@
     "warmup_steps": 50,
     "warmup_bits": 4,
     "bit_anneal_steps": 150,
+    "_bit_schedule_note": "warmup_bits/bit_anneal_steps describe the ORIGINAL progressive 4->2 schedule and apply only to rows with bit_schedule='anneal_4_to_2_over_150'. Rows with bit_schedule='fixed_2bit' were run with --warmup-bits 2 --bits 2, which makes scheduled_bits() return the target immediately (no annealing). See analysis.bit_annealing_is_a_noop -- the schedule was measured to make no significant difference.",
     "group_size": 16,
     "skip_layers": [
       "layers.16.self_attn.k_proj",
@@ -76,15 +77,56 @@
       "role": "Unadapted baseline. NOT a fair ceiling for the QAT runs -- it has had no exposure to WikiText-2 train text, so comparing QAT against it overstates quantization quality."
     },
     {
+      "id": "qat_q2k_seq_roundtrip",
+      "label": "QAT Q2_K, SEQ quant-function, roundtrip init, fixed 2-bit",
+      "ppl": 26.594,
+      "stderr": 0.21602,
+      "measured": true,
+      "quant_function": "seq",
+      "bit_schedule": "fixed_2bit",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "--quant-function seq --init-mode roundtrip --warmup-bits 2 --bits 2 --wikitext-frac 0.5 --distill-weight 0.5 --group-size 16, 9 skip-layers",
+      "role": "Nominally the best number measured, but NOT a clear win: its CI [26.378, 26.810] overlaps qat_q2k_affine_noanneal's [26.686, 27.124]. Treat as a tie with affine, not an improvement. See analysis.seq_evaluation."
+    },
+    {
       "id": "qat_q2k_blend",
-      "label": "QAT Q2_K, ptq_q2k init, WikiText+Alpaca blend, 9 skip-layers",
+      "label": "QAT Q2_K, affine, ptq_q2k init, WikiText+Alpaca blend, 9 skip-layers",
       "ppl": 26.9519,
       "stderr": 0.21945,
       "measured": true,
+      "quant_function": "affine",
+      "bit_schedule": "anneal_4_to_2_over_150",
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193920,
       "config": "--init-mode ptq_q2k --wikitext-frac 0.5 --distill-weight 0.5 --group-size 16, 9 skip-layers",
-      "role": "Headline QAT result."
+      "role": "The long-standing headline result. Superseded only nominally; see qat_q2k_seq_roundtrip."
+    },
+    {
+      "id": "qat_q2k_affine_noanneal",
+      "label": "QAT Q2_K, affine, ptq_q2k init, fixed 2-bit (annealing control)",
+      "ppl": 26.905,
+      "stderr": 0.21938,
+      "measured": true,
+      "quant_function": "affine",
+      "bit_schedule": "fixed_2bit",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "identical to qat_q2k_blend except --warmup-bits 2 (no annealing)",
+      "role": "CONTROL. Isolates the bit-annealing schedule from the SEQ change, which otherwise moved together. Result: annealing is a no-op (see analysis.bit_annealing_is_a_noop), so the SEQ rows differ from affine only by the quant function."
+    },
+    {
+      "id": "qat_q2k_seq_ptq_init",
+      "label": "QAT Q2_K, SEQ quant-function, ptq_q2k init, fixed 2-bit",
+      "ppl": 39.6654,
+      "stderr": 0.33775,
+      "measured": true,
+      "quant_function": "seq",
+      "bit_schedule": "fixed_2bit",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193920,
+      "config": "identical to qat_q2k_seq_roundtrip except --init-mode ptq_q2k",
+      "role": "ABLATION: SEQ paired with PTQ-dequantized init. Far worse than the same run with roundtrip init (39.67 vs 26.59). SEQ's symmetric no-zero-point grid re-quantizes already-affine-quantized PTQ weights badly: pre-finetune perplexity 1,792,078 vs 79,825 for roundtrip and 16,814 for affine. Do not pair SEQ with ptq_q2k."
     },
     {
       "id": "qat_q2k_no_wikitext",
@@ -141,6 +183,29 @@
       "vs_unadapted_fp16_raw": "26.9519 / 21.3708 = 1.26x worse (MISLEADING -- flattered by the QAT model's domain adaptation)"
     },
     "size_caveat": "The QAT Q2_K file is 495 MB vs PTQ's 347 MB (+43%), because 9 skip-layers and the embeddings stay F16. This is NOT an iso-size comparison, so the README's 'same 2-bit size and speed' framing does not hold for these two artifacts.",
-    "leakage_check": "qat/data.py load_wikitext2_train_examples uses split='train'; the eval corpus is split='test'. No train/eval overlap."
+    "leakage_check": "qat/data.py load_wikitext2_train_examples uses split='train'; the eval corpus is split='test'. No train/eval overlap.",
+    "bit_annealing_is_a_noop": {
+      "note": "CONFIRMED by the qat_q2k_affine_noanneal control run: the progressive 4->2 bit-annealing schedule makes no significant difference at 1000 steps.",
+      "with_annealing": 26.9519,
+      "without_annealing": 26.905,
+      "delta": -0.0469,
+      "verdict": "Statistically a no-op. The confidence intervals [26.732, 27.171] and [26.686, 27.124] overlap across almost their entire width, and the gap (0.047) is roughly a fifth of a single run's stderr. Disabling annealing is free. This matters methodologically: the SEQ runs also disable annealing, so without this control their difference from the headline run would have confounded two changes at once.",
+      "training_proxy_agrees": "19.7339 annealed vs 19.6353 fixed."
+    },
+    "seq_evaluation": {
+      "note": "ParetoQ SEQ (--quant-function seq) evaluated against affine at matched settings (both fixed 2-bit, so the quant function is the only difference).",
+      "seq_roundtrip_init": 26.594,
+      "affine_same_settings": 26.905,
+      "verdict": "NOT a demonstrated win. SEQ is nominally 0.31 better, but the CIs overlap ([26.378, 26.810] vs [26.686, 27.124]). Note also that llama-perplexity's stderr is a within-run estimate over chunks; it does not capture seed-to-seed variance between two separate training runs, so the true uncertainty on this comparison is wider than the intervals suggest. Read this as a tie. The paper's claimed 2-bit advantage over LSQ-style quantization is neither reproduced nor refuted here.",
+      "init_sensitivity_is_the_real_finding": "SEQ is extremely sensitive to shadow-weight init: 39.67 with ptq_q2k vs 26.594 with roundtrip, a 1.49x swing from the init mode alone, with everything else identical. An earlier reading of the ptq_q2k number alone suggested 'SEQ is 1.47x worse than affine'; that conclusion was an artifact of the init pairing, not a property of SEQ. ParetoQ initializes from fp weights, which roundtrip approximates and ptq_q2k does not.",
+      "export_penalty_is_not_differential": "SEQ's Q2_K round-trip error on a sampled tensor is higher than affine's (3.03% vs 1.46%), but end-to-end the proxy->GGUF degradation is nearly identical (SEQ 29.85->39.67 = 1.33x; affine 19.64->26.91 = 1.37x). The export path does not penalize SEQ disproportionately."
+    },
+    "seq_alpha_positivity_bug": {
+      "note": "Found while verifying SEQ's learnable alpha actually trains. Fixed in commit 6cd451e.",
+      "observed": "After 1000 steps, 3 of 26,279,936 alpha scales had gone non-positive (min -3.0e-05). The count did not grow between step 100 and step 1000, and no run produced a NaN.",
+      "why_it_matters": "alpha < 0 silently mirrors a group's quantization grid; alpha == 0 makes the backward's W_Q/alpha term 0/0 = NaN, which the |u| < 1 indicator cannot mask because nan * 0 == nan.",
+      "fix": "abs().clamp_min(_EPS) on alpha in seq_fake_quant -- an exact identity for every alpha > _EPS, so all measured SEQ results above remain reproducible from the fixed code (verified bit-identical forward for positive alpha).",
+      "alpha_does_train": "All 187 alpha tensors moved; mean relative change 0.14% at 100 steps growing to larger movement by 1000 (largest mover layers.16.mlp.up_proj at 2.02%). Not stuck at init."
+    }
   }
 }
