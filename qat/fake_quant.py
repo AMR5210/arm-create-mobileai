@@ -168,7 +168,21 @@ def seq_fake_quant(
         w = F.pad(w, (0, pad))
     num_groups = w.shape[1] // group_size
     grouped = w.view(out_features, num_groups, group_size)
-    a = alpha.float().view(out_features, num_groups, 1)
+    # alpha is a free nn.Parameter, so nothing stops the optimizer from driving
+    # it to zero or negative -- but SEQ defines the symmetric range
+    # [-alpha, alpha], which only means anything for alpha > 0. Two failure
+    # modes, both observed on a real 1000-step run (3 of 26.3M scales went
+    # negative, min -3.0e-05):
+    #   * alpha < 0 silently MIRRORS that group's quantization grid;
+    #   * alpha == 0 makes the backward's W_Q/alpha a 0/0 NaN, which the
+    #     |u| < 1 indicator cannot mask (nan * 0 == nan), poisoning AdamW's
+    #     moment buffers for good.
+    # Take the magnitude and floor it. abs() (rather than clamp alone) keeps a
+    # group that crossed zero trainable via its magnitude instead of freezing
+    # it at the floor, where clamp's gradient is zero. This is an identity for
+    # every alpha > _EPS, so healthy groups -- i.e. essentially all of them --
+    # are bit-identical to before.
+    a = alpha.float().abs().clamp_min(_EPS).view(out_features, num_groups, 1)
 
     k = float(2 ** bits)
     dequant = _SEQuant.apply(grouped, a, k, clip_eps)
