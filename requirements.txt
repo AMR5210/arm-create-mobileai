@@ -6,3 +6,7 @@ huggingface_hub>=0.24
 sentencepiece>=0.2.0
 protobuf>=4.25
 tqdm>=4.66
+# Needed by qat/gguf_q2k.py, so it is a TRAINING dependency too, not just an
+# export one: train_qat.py --init-mode ptq_q2k initializes the shadow weights
+# through the real Q2_K quantiser and fails at startup without this.
+gguf>=0.10.0
