@@ -1,0 +1,146 @@
+{
+  "benchmark": "WikiText-2 test perplexity",
+  "measured_on": "2026-08-01",
+  "harness": {
+    "tool": "llama.cpp llama-perplexity",
+    "llama_cpp_commit": "de699957b",
+    "corpus": "eval/data/wikitext2_test.txt",
+    "corpus_source": "Salesforce/wikitext, wikitext-2-raw-v1, TEST split (scripts/prepare_eval_data.py)",
+    "chunks": 583,
+    "n_ctx": 512,
+    "note": "Every row below marked measured=true used this identical harness and corpus, so the numbers are directly comparable to each other."
+  },
+  "environment": {
+    "training_device": "AMD Instinct MI300X VF (192 GiB)",
+    "perplexity_device": "CPU, 20 cores",
+    "torch": "2.10.0+rocm7.2.4",
+    "transformers": "5.14.1",
+    "repo_commit": "1749dfe"
+  },
+  "base_model": "Qwen/Qwen3-0.6B",
+  "common_training_config": {
+    "optimizer": "adamw",
+    "batch_size": 4,
+    "lr": 1e-05,
+    "max_steps": 1000,
+    "max_length": 512,
+    "max_examples": 2000,
+    "warmup_steps": 50,
+    "warmup_bits": 4,
+    "bit_anneal_steps": 150,
+    "group_size": 16,
+    "skip_layers": [
+      "layers.16.self_attn.k_proj",
+      "layers.21.self_attn.k_proj",
+      "layers.8.self_attn.k_proj",
+      "layers.27.self_attn.k_proj",
+      "layers.26.mlp.gate_proj",
+      "layers.26.mlp.up_proj",
+      "layers.27.mlp.gate_proj",
+      "layers.27.mlp.up_proj",
+      "layers.2.mlp.down_proj"
+    ]
+  },
+  "results": [
+    {
+      "id": "fp16_blend_kd0",
+      "label": "fp16 fine-tuned on WikiText+Alpaca blend (no KD)",
+      "ppl": 13.4596,
+      "stderr": 0.09809,
+      "measured": true,
+      "format": "GGUF F16",
+      "size_bytes": 1198182240,
+      "config": "--wikitext-frac 0.5 --distill-weight 0 --skip-layers self_attn mlp (0 layers wrapped: no quantization)",
+      "role": "FAIR CEILING. The correct comparison point for the QAT runs: same data, same steps, same optimizer, no quantization."
+    },
+    {
+      "id": "fp16_blend_kd05",
+      "label": "fp16 fine-tuned on blend, CAKLD weight 0.5",
+      "ppl": 14.0232,
+      "stderr": 0.10378,
+      "measured": true,
+      "format": "GGUF F16",
+      "size_bytes": 1198182240,
+      "config": "--wikitext-frac 0.5 --distill-weight 0.5 --skip-layers self_attn mlp (0 layers wrapped)",
+      "role": "Literal 'same everything but no quantization'. Worse than kd0 because the teacher is initially identical to the student, so the CAKLD term is a pure anchor toward base that opposes domain adaptation. kd0 is the stronger, fairer ceiling."
+    },
+    {
+      "id": "fp16_raw",
+      "label": "fp16 base model, no fine-tuning",
+      "ppl": 21.3708,
+      "stderr": 0.18712,
+      "measured": true,
+      "format": "GGUF F16",
+      "size_bytes": 1509347648,
+      "config": "Qwen/Qwen3-0.6B as downloaded",
+      "role": "Unadapted baseline. NOT a fair ceiling for the QAT runs -- it has had no exposure to WikiText-2 train text, so comparing QAT against it overstates quantization quality."
+    },
+    {
+      "id": "qat_q2k_blend",
+      "label": "QAT Q2_K, ptq_q2k init, WikiText+Alpaca blend, 9 skip-layers",
+      "ppl": 26.9519,
+      "stderr": 0.21945,
+      "measured": true,
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193920,
+      "config": "--init-mode ptq_q2k --wikitext-frac 0.5 --distill-weight 0.5 --group-size 16, 9 skip-layers",
+      "role": "Headline QAT result."
+    },
+    {
+      "id": "qat_q2k_no_wikitext",
+      "label": "QAT Q2_K, ptq_q2k init, Alpaca only, 9 skip-layers",
+      "ppl": 70.8779,
+      "stderr": 0.65876,
+      "measured": true,
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "identical to qat_q2k_blend except --wikitext-frac 0",
+      "role": "ABLATION: isolates the WikiText blend. Its training-time proxy perplexity bottomed near step 400 and then rose, i.e. it overfits Alpaca while WikiText degrades."
+    },
+    {
+      "id": "ptq_q2k",
+      "label": "PTQ Q2_K (llama-quantize on the unmodified base model)",
+      "ppl": 275.8938,
+      "stderr": 2.98429,
+      "measured": true,
+      "format": "GGUF Q2_K (all quantizable tensors)",
+      "size_bytes": 347288896,
+      "config": "scripts/quantize_ptq.sh, Q2_K",
+      "role": "Naive 2-bit baseline, and a cross-box control: reproduces the ~276 previously reported on other hardware, which is what makes the 104.78 comparison below trustworthy."
+    },
+    {
+      "id": "prior_cakld_best",
+      "label": "Prior CAKLD best (reference, NOT re-measured here)",
+      "ppl": 104.78,
+      "stderr": null,
+      "measured": false,
+      "format": "GGUF Q2_K (8 F16 skip-layers)",
+      "size_bytes": 490733568,
+      "config": "CAKLD, roundtrip init, Alpaca only, 8 skip-layers; reported in commit 305836c",
+      "role": "Historical reference carried over from commit 305836c. Quoted, not reproduced on this box. Its exact flags are not recorded in the repo; distill-weight 0.5 is from operator recollection, not a committed config."
+    }
+  ],
+  "analysis": {
+    "improvement_decomposition": {
+      "note": "Exact multiplicative decomposition of the 104.78 -> 26.95 improvement.",
+      "prior_cakld_best": 104.78,
+      "step1_ptq_q2k_init_plus_9th_skip_layer": {
+        "to": 70.8779,
+        "factor": 1.48,
+        "caveat": "Two changes at once (init mode AND the 9th skip-layer). Not separable without a further run."
+      },
+      "step2_wikitext_blend": {
+        "to": 26.9519,
+        "factor": 2.63
+      },
+      "total_factor": 3.89
+    },
+    "true_cost_of_2bit": {
+      "note": "The honest quantization cost is QAT measured against the fp16 model trained on identical data, not against the unadapted base model.",
+      "vs_fair_ceiling_fp16_blend_kd0": "26.9519 / 13.4596 = 2.00x worse",
+      "vs_unadapted_fp16_raw": "26.9519 / 21.3708 = 1.26x worse (MISLEADING -- flattered by the QAT model's domain adaptation)"
+    },
+    "size_caveat": "The QAT Q2_K file is 495 MB vs PTQ's 347 MB (+43%), because 9 skip-layers and the embeddings stay F16. This is NOT an iso-size comparison, so the README's 'same 2-bit size and speed' framing does not hold for these two artifacts.",
+    "leakage_check": "qat/data.py load_wikitext2_train_examples uses split='train'; the eval corpus is split='test'. No train/eval overlap."
+  }
+}

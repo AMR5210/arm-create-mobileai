@@ -27,6 +27,7 @@ eval/data/*
 # Benchmark outputs (raw run logs are large and machine-specific, not tracked)
 results/*
 !results/.gitkeep
+!results/wikitext2_perplexity.json
 
 # ...except the small eval diagnostics cited in the write-up. Note the
 # re-include of results/logs/ is required first: git will not un-ignore a file
@@ -35,6 +36,9 @@ results/*
 results/logs/*
 !results/logs/instr_eval_cakld.log
 !results/logs/instr_eval_diag_*.json
+# ...and the distilled QAT/ablation training log (config + every-50-step lines
+# only, ~14 KB -- the raw logs it is cut down from stay untracked).
+!results/logs/qat_ablation_runs.log
 
 # OS
 .DS_Store
