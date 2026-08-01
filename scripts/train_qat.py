@@ -158,6 +158,18 @@ def main() -> None:
         "default because newer huggingface_hub rejects the bare 'wikitext' id.",
     )
     parser.add_argument(
+        "--quant-function",
+        choices=["affine", "seq"],
+        default="affine",
+        help="Fake-quant math. 'affine' (default, unchanged): per-group min/max "
+        "asymmetric quantization with an implicit zero-point, scale recomputed "
+        "from stats each forward pass. 'seq': ParetoQ Stretched Elastic Quant "
+        "(arXiv:2502.02631) -- symmetric [-alpha, alpha], no zero-point, with a "
+        "LEARNABLE per-group scale alpha (trained jointly with the weights, "
+        "initialized to each group's max|W|). The paper reports SEQ beats "
+        "LSQ-style quant at 2-bit / 1.58-bit (and underperforms it at 3-4 bit).",
+    )
+    parser.add_argument(
         "--init-mode",
         choices=["roundtrip", "ptq_q2k"],
         default="roundtrip",
@@ -379,8 +391,9 @@ def main() -> None:
     replaced = apply_qat(
         model, bits=args.bits, group_size=args.group_size, init_bits=args.init_bits,
         extra_skip_patterns=tuple(args.skip_layers), init_mode=args.init_mode,
+        quant_function=args.quant_function,
     )
-    print(f"    wrapped {len(replaced)} linear layers")
+    print(f"    wrapped {len(replaced)} linear layers  (quant-function: {args.quant_function})")
     if args.skip_layers:
         print(f"    kept at full precision (mixed-precision): {', '.join(args.skip_layers)}")
     if args.init_mode == "ptq_q2k":

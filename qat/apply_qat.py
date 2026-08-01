@@ -9,7 +9,6 @@ higher precision within a nominally-2-bit model).
 import torch
 import torch.nn as nn
 
-from .fake_quant import affine_fake_quant
 from .quantized_linear import FakeQuantLinear
 
 DEFAULT_SKIP_PATTERNS = ("embed_tokens", "lm_head", "norm")
@@ -27,6 +26,7 @@ def apply_qat(
     skip_patterns=DEFAULT_SKIP_PATTERNS,
     extra_skip_patterns=(),
     init_mode: str = "roundtrip",
+    quant_function: str = "affine",
 ) -> list[str]:
     """Replaces eligible nn.Linear submodules with FakeQuantLinear, in place.
     Returns the list of replaced module names.
@@ -42,6 +42,10 @@ def apply_qat(
     `init_mode` selects how the trainable shadow weights are initialized --
     "roundtrip" (INT4 fake-quant round-trip) or "ptq_q2k" (dequantized real
     PTQ-2bit weights). See FakeQuantLinear.from_linear.
+
+    `quant_function` selects the fake-quant math -- "affine" (per-group min/max,
+    default) or "seq" (ParetoQ Stretched Elastic Quant, learnable per-group
+    scale). See qat/fake_quant.py.
     """
     all_skip = tuple(skip_patterns) + tuple(extra_skip_patterns)
     replaced = []
@@ -51,7 +55,7 @@ def apply_qat(
             if isinstance(child, nn.Linear) and not _should_skip(full_name, all_skip):
                 qlinear = FakeQuantLinear.from_linear(
                     child, bits=bits, group_size=group_size, init_bits=init_bits,
-                    init_mode=init_mode,
+                    init_mode=init_mode, quant_function=quant_function,
                 )
                 setattr(parent, child_name, qlinear)
                 replaced.append(full_name)
@@ -142,7 +146,7 @@ def fake_quantized_state_dict(model: nn.Module) -> dict:
     for name, module in model.named_modules():
         if isinstance(module, FakeQuantLinear):
             with torch.no_grad():
-                w_hat = affine_fake_quant(module.weight, module.bits, module.group_size)
+                w_hat = module.quantized_weight()  # affine or SEQ, per the module
             state_dict[f"{name}.weight"] = w_hat.detach().cpu().clone()
             if module.bias is not None:
                 state_dict[f"{name}.bias"] = module.bias.detach().cpu().clone()
