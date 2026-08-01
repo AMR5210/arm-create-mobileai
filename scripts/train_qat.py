@@ -545,10 +545,14 @@ def main() -> None:
                 elif args.distill_loss == "kl":
                     kd_loss = kl_distill_loss(outputs.logits, teacher_outputs.logits, batch["labels"])
                 else:  # wasserstein: hidden-state SW+MSE, captured by the hooks
-                    # during the student/teacher forwards just above.
+                    # during the student/teacher forwards just above. Mask out
+                    # padded (and prompt) positions with the SAME response-only
+                    # mask the hard loss / CAKLD use, so variable-length Alpaca
+                    # padding doesn't add noise to the distribution comparison.
+                    hidden_mask = batch["labels"] != -100
                     kd_loss = combined_block_loss(
                         student_hooks.captured, teacher_hooks.captured, args.wasserstein_layers,
-                        sw_weight=args.sw_weight, num_projections=args.sw_projections,
+                        mask=hidden_mask, sw_weight=args.sw_weight, num_projections=args.sw_projections,
                     )
                 loss = hard_loss + args.distill_weight * kd_loss
             else:

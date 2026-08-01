@@ -67,19 +67,21 @@ def sliced_wasserstein(
 
 
 def block_sw_mse_loss(
-    student_hidden: torch.Tensor, teacher_hidden: torch.Tensor,
+    student_rows: torch.Tensor, teacher_rows: torch.Tensor,
     sw_weight: float = DEFAULT_SW_WEIGHT, num_projections: int = DEFAULT_NUM_PROJECTIONS,
     p: int = 1,
 ) -> torch.Tensor:
     """arXiv:2601.07878 per-block loss on hidden states:
         (1 - sw_w) * MSE + sw_w * SW,
-    between teacher (fp16) and student (quantized) block hidden states, each
-    [batch, seq, hidden] flattened to [batch*seq, hidden]. Differentiable w.r.t.
-    the student; the teacher target is detached.
+    between teacher (fp16) and student (quantized) block hidden-state rows, each
+    already flattened+masked to [N, hidden]. Differentiable w.r.t. the student;
+    the teacher target is detached.
     """
-    s = student_hidden.reshape(-1, student_hidden.shape[-1]).float()
-    t = teacher_hidden.reshape(-1, teacher_hidden.shape[-1]).float().detach()
+    s = student_rows.float()
+    t = teacher_rows.float().detach()
     assert s.shape == t.shape, (s.shape, t.shape)
+    if s.shape[0] == 0:                       # no positions after masking
+        return s.new_zeros(())
     mse = F.mse_loss(s, t)
     sw = sliced_wasserstein(s, t, num_projections=num_projections, p=p)
     return (1.0 - sw_weight) * mse + sw_weight * sw
@@ -131,17 +133,27 @@ class BlockHiddenStateHooks:
 
 
 def combined_block_loss(
-    student_caps: dict, teacher_caps: dict, layer_indices,
+    student_caps: dict, teacher_caps: dict, layer_indices, mask: torch.Tensor | None = None,
     sw_weight: float = DEFAULT_SW_WEIGHT, num_projections: int = DEFAULT_NUM_PROJECTIONS,
     p: int = 1,
 ) -> torch.Tensor:
     """Mean over the selected blocks of block_sw_mse_loss. Averaging (not
-    summing) keeps the loss scale independent of how many blocks are selected."""
+    summing) keeps the loss scale independent of how many blocks are selected.
+
+    mask: optional [batch, seq] boolean selecting which positions to compare
+    (e.g. labels != -100 -- the same response-only / non-padding mask the hard
+    loss and CAKLD use). Padded (and, for instruction data, prompt) positions
+    are excluded so variable-length examples don't add noise. When None, all
+    positions are used (flatten [B,S,H] -> [B*S,H])."""
     losses = []
     for i in layer_indices:
-        losses.append(
-            block_sw_mse_loss(student_caps[i], teacher_caps[i], sw_weight, num_projections, p)
-        )
+        sh, th = student_caps[i], teacher_caps[i]           # [B, S, H]
+        if mask is not None:
+            s_rows, t_rows = sh[mask], th[mask]             # [N, H]
+        else:
+            s_rows = sh.reshape(-1, sh.shape[-1])
+            t_rows = th.reshape(-1, th.shape[-1])
+        losses.append(block_sw_mse_loss(s_rows, t_rows, sw_weight, num_projections, p))
     return torch.stack(losses).mean()
 
 
