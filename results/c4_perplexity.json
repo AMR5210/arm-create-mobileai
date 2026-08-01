@@ -1,0 +1,85 @@
+{
+  "benchmark": "C4 (en) validation perplexity -- the NON-WIKITEXT-OVERLAPPING evaluation",
+  "measured_on": "2026-08-01",
+  "why_this_exists": "QAT here trains on a WikiText-2 TRAIN blend and is scored on WikiText-2 TEST. There is no leakage (different splits), but the training domain matches the eval domain, so a WikiText-2 win partly measures domain alignment rather than quantization quality. C4 is web text from a different distribution and nothing in the training mix comes from it, so it tests whether a WikiText-2 gain actually generalizes. Companion to results/wikitext2_perplexity.json; the two tables are deliberately kept separate.",
+  "harness": {
+    "tool": "llama.cpp llama-perplexity",
+    "llama_cpp_commit": "de699957b",
+    "corpus": "eval/data/c4_test.txt",
+    "corpus_source": "allenai/c4, en/c4-validation.00000-of-00008.json.gz, documents taken in file order until ~1.29 M chars (deterministic). Rebuild with: scripts/prepare_eval_data.py --datasets c4",
+    "corpus_chars": 1291639,
+    "corpus_documents": 613,
+    "chunks": 550,
+    "n_ctx": 512,
+    "note": "Corpus sized to match wikitext2_test.txt (1,290,546 chars / 583 chunks) so the two evaluations have comparable chunk counts and error-bar widths. All four rows below used this identical harness."
+  },
+  "environment": {
+    "perplexity_device": "CPU, 20 cores",
+    "repo_commit": "3e47d9f"
+  },
+  "base_model": "Qwen/Qwen3-0.6B",
+  "results": [
+    {
+      "id": "fp16_raw",
+      "label": "fp16 base model, no fine-tuning",
+      "ppl": 29.4552,
+      "stderr": 0.26319,
+      "gguf": "models/qwen3-0.6b-fp16.gguf",
+      "wikitext2_ppl": 21.3708,
+      "ratio_to_fp16_c4": 1.0,
+      "ratio_to_fp16_wikitext2": 1.0
+    },
+    {
+      "id": "qat_q2k_blend",
+      "label": "QAT Q2_K, CAKLD + ptq_q2k init + WikiText/Alpaca blend (the 26.95 best)",
+      "ppl": 55.9509,
+      "stderr": 0.49716,
+      "gguf": "models/qwen3-0.6b-qat-q2_k.gguf",
+      "wikitext2_ppl": 26.9519,
+      "ratio_to_fp16_c4": 1.9,
+      "ratio_to_fp16_wikitext2": 1.26
+    },
+    {
+      "id": "qat_q2k_no_wikitext",
+      "label": "QAT Q2_K, same but Alpaca-only (--wikitext-frac 0), the 70.88 result",
+      "ppl": 73.0289,
+      "stderr": 0.69095,
+      "gguf": "models/qwen3-0.6b-qat-nowiki-q2_k.gguf",
+      "wikitext2_ppl": 70.8779,
+      "ratio_to_fp16_c4": 2.48,
+      "ratio_to_fp16_wikitext2": 3.32
+    },
+    {
+      "id": "ptq_q2k",
+      "label": "PTQ Q2_K (llama-quantize on the unmodified base model)",
+      "ppl": 361.6109,
+      "stderr": 3.9318,
+      "gguf": "models/qwen3-0.6b-ptq-q2_k.gguf",
+      "wikitext2_ppl": 275.8938,
+      "ratio_to_fp16_c4": 12.28,
+      "ratio_to_fp16_wikitext2": 12.91
+    }
+  ],
+  "analysis": {
+    "headline": "About half the WikiText blend's apparent advantage is domain alignment, not quantization quality. The blend-vs-Alpaca-only spread is 2.63x on WikiText-2 (26.95 vs 70.88) but only 1.31x on C4 (55.95 vs 73.03).",
+    "qat_degradation_is_larger_off_domain": {
+      "note": "Measured against fp16 on the same corpus, the best QAT model loses substantially more ground on C4 than on WikiText-2.",
+      "wikitext2": "26.9519 / 21.3708 = 1.26x worse than fp16",
+      "c4": "55.9509 / 29.4552 = 1.90x worse than fp16",
+      "implication": "The WikiText-2 headline number overstates this checkpoint's general quality. Quote the C4 ratio alongside it, or the 2-bit cost reads as roughly half what it is off-domain."
+    },
+    "ptq_is_the_control_that_validates_the_comparison": {
+      "note": "PTQ is never trained, so it has no domain adaptation to inflate its WikiText-2 score. Its degradation ratio is essentially unchanged across the two corpora -- 12.91x on WikiText-2 vs 12.28x on C4.",
+      "why_it_matters": "This rules out the alternative explanation that C4 is simply 'harder' in a way that penalizes low-bit models generally. C4 IS harder in absolute terms (fp16 goes 21.37 -> 29.46), but that difficulty affects the fp16 denominator too. Only the TRAINED models' ratios move, which localizes the effect to their training data rather than to the corpus."
+    },
+    "the_core_project_claim_survives": {
+      "note": "QAT still beats PTQ decisively off-domain: 55.95 vs 361.61, a 6.46x gap on C4 (vs 10.24x on WikiText-2).",
+      "verdict": "The central claim -- 2-bit QAT preserves far more quality than 2-bit PTQ at the same bit-width -- holds on a corpus neither model was trained toward. The margin is smaller than WikiText-2 suggests but remains large and unambiguous."
+    },
+    "alpaca_only_model_is_domain_neutral": {
+      "note": "The Alpaca-only model barely moves in absolute terms (70.88 WikiText-2 -> 73.03 C4) and actually improves relative to fp16 (3.32x -> 2.48x).",
+      "why": "It never saw WikiText-2 train text, so it had no domain advantage to lose. Its WikiText-2 score was, in effect, already an out-of-domain measurement."
+    },
+    "caveat_c4_and_pretraining": "C4 is a common LLM pretraining corpus, so Qwen3-0.6B's base weights may well have seen C4-derived text. That affects all four rows equally (they share the same base model) and so does not bias the comparison between them, but it means C4 is 'not in the QAT fine-tuning mix', not 'never seen by the model'."
+  }
+}

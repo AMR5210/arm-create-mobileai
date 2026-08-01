@@ -236,6 +236,11 @@
     },
     "size_caveat": "The QAT Q2_K file is 495 MB vs PTQ's 347 MB (+43%), because 9 skip-layers and the embeddings stay F16. This is NOT an iso-size comparison, so the README's 'same 2-bit size and speed' framing does not hold for these two artifacts.",
     "leakage_check": "qat/data.py load_wikitext2_train_examples uses split='train'; the eval corpus is split='test'. No train/eval overlap.",
+    "these_numbers_overstate_generality_see_c4": {
+      "note": "IMPORTANT when quoting anything in this file. The QAT models train on a WikiText-2 TRAIN blend and are scored on WikiText-2 TEST -- no leakage, but the domains match, so these scores partly measure domain alignment. results/c4_perplexity.json re-runs four of these checkpoints on an off-domain C4 slice.",
+      "what_changes": "The blend-vs-Alpaca-only spread collapses from 2.63x here (26.95 vs 70.88) to 1.31x on C4 (55.95 vs 73.03), and the best QAT model goes from 1.26x worse than fp16 here to 1.90x worse on C4. Roughly half the blend's apparent advantage is domain alignment.",
+      "what_holds": "QAT still beats PTQ by 6.46x on C4, so the central 2-bit QAT-vs-PTQ claim survives off-domain."
+    },
     "bit_annealing_is_a_noop": {
       "note": "CONFIRMED by the qat_q2k_affine_noanneal control run: the progressive 4->2 bit-annealing schedule makes no significant difference at 1000 steps.",
       "with_annealing": 26.9519,

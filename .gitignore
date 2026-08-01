@@ -28,6 +28,7 @@ eval/data/*
 results/*
 !results/.gitkeep
 !results/wikitext2_perplexity.json
+!results/c4_perplexity.json
 
 # ...except the small eval diagnostics cited in the write-up. Note the
 # re-include of results/logs/ is required first: git will not un-ignore a file
