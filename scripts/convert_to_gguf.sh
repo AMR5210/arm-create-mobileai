@@ -17,9 +17,37 @@ if [ ! -f "$CONVERT_SCRIPT" ]; then
   exit 1
 fi
 
+# llama.cpp pins `torch==2.11.0` in requirements-convert_hf_to_gguf.txt behind
+# `--extra-index-url https://download.pytorch.org/whl/cpu`. Installing that as-is
+# REPLACES this project's hardware-specific torch (e.g. the ROCm build on the
+# AMD GPU box) with a CPU-only wheel, which silently breaks every GPU path --
+# train_qat.py, diagnose_qat_grads.py -- long after the conversion itself
+# reported success. convert_hf_to_gguf.py only uses torch to *load* tensors,
+# never for compute, so it has no stake in which build is installed.
+#
+# So: never let this file install torch. Everything else it pins is fine.
 if [ -f "$CONVERT_REQS" ]; then
-  echo "==> Installing llama.cpp's pinned conversion dependencies"
-  pip install -r "$CONVERT_REQS"
+  if python3 -c "import numpy, gguf, sentencepiece, transformers" 2>/dev/null; then
+    echo "==> Conversion dependencies already satisfied; skipping pip install"
+  else
+    echo "==> Installing llama.cpp's conversion dependencies (torch excluded)"
+    # Written next to the original so its relative `-r ./requirements-*.txt`
+    # include still resolves.
+    FILTERED_REQS="$(dirname "$CONVERT_REQS")/.requirements-convert-no-torch.txt"
+    trap 'rm -f "$FILTERED_REQS"' EXIT
+    grep -vE '^[[:space:]]*(torch|--extra-index-url[[:space:]]+https://download\.pytorch\.org/whl/(cpu|nightly))' \
+      "$CONVERT_REQS" > "$FILTERED_REQS" || true
+    pip install -r "$FILTERED_REQS"
+  fi
+fi
+
+if ! python3 -c "import torch" 2>/dev/null; then
+  echo "ERROR: torch is not installed, and this script deliberately will not" >&2
+  echo "install it (see comment above -- the pinned wheel is CPU-only)." >&2
+  echo "Install the build matching this machine's accelerator first, e.g. ROCm:" >&2
+  echo "  pip install torch --index-url \"\${TORCH_INDEX_URL:-https://download.pytorch.org/whl/rocm6.3}\"" >&2
+  echo "or see https://pytorch.org/get-started/locally/ for the current index URL." >&2
+  exit 1
 fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
