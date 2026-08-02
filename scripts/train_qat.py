@@ -37,10 +37,12 @@ from qat.distill_losses import (  # noqa: E402
     kl_distill_loss,
 )
 from qat.data import (  # noqa: E402
+    blend_target_counts,
     build_blended_examples,
     build_supervised_example,
     collate_fn,
     load_alpaca_examples,
+    load_fineweb_train_examples,
     load_wikitext2_train_examples,
 )
 from qat.eval_utils import compute_perplexity  # noqa: E402
@@ -161,6 +163,32 @@ def main() -> None:
         default="Salesforce/wikitext",
         help="HF dataset id for the WikiText-2 train blend. Namespaced by "
         "default because newer huggingface_hub rejects the bare 'wikitext' id.",
+    )
+    parser.add_argument(
+        "--fineweb-frac",
+        type=float,
+        default=0.0,
+        help="Fraction of QAT training examples drawn from FineWeb (plain LM "
+        "text, every token supervised, streamed from HF), on top of "
+        "--wikitext-frac -- both are shares of the same final blended set, not "
+        "of each other. FineWeb is general web text with no Wikipedia or C4 "
+        "component (see qat/data.py's module docstring for why it was picked "
+        "over RedPajama/SlimPajama), so it adds domain breadth without "
+        "overlapping WikiText-2 or the C4 generalization eval. 0 (default) "
+        "disables it entirely -- no FineWeb download, previous behavior "
+        "unchanged.",
+    )
+    parser.add_argument(
+        "--fineweb-dataset",
+        default="HuggingFaceFW/fineweb",
+        help="HF dataset id for the FineWeb blend.",
+    )
+    parser.add_argument(
+        "--fineweb-config",
+        default="sample-10BT",
+        help="FineWeb sub-config to stream from. The 10B-token sample is far "
+        "more than enough to draw --max-examples chunks from without "
+        "downloading the full multi-trillion-token dataset.",
     )
     parser.add_argument(
         "--quant-function",
@@ -380,22 +408,41 @@ def main() -> None:
     raw_examples = load_alpaca_examples(max_examples=args.max_examples, dataset_name=args.dataset)
     examples = [build_supervised_example(ex, tokenizer, args.max_length) for ex in raw_examples]
 
+    # Size each corpus loader from the ACTUAL blend target, not --max-examples
+    # (which only bounds Alpaca) -- otherwise adding a third source silently
+    # caps an earlier one below what its --*-frac asked for, e.g. WikiText-2
+    # capped at 2000 when a 3-way blend actually needs more of it than
+    # Alpaca's count alone would imply.
+    target_counts = blend_target_counts(
+        len(examples), {"WikiText-2": args.wikitext_frac, "FineWeb": args.fineweb_frac}
+    )
+    extra_corpora = []
     if args.wikitext_frac > 0:
         print(f"==> Domain alignment: blending in WikiText-2 train text (target frac {args.wikitext_frac:.2f})")
         wiki_examples = load_wikitext2_train_examples(
-            tokenizer, max_length=args.max_length, max_examples=args.max_examples,
+            tokenizer, max_length=args.max_length, max_examples=target_counts["WikiText-2"],
             dataset_name=args.wikitext_dataset,
         )
-        n_alpaca = len(examples)
-        examples = build_blended_examples(examples, wiki_examples, args.wikitext_frac)
-        n_wiki = len(examples) - n_alpaca
-        realized = n_wiki / len(examples) if examples else 0.0
-        print(
-            f"    blended {n_alpaca} Alpaca + {n_wiki} WikiText-2 = {len(examples)} examples "
-            f"(realized WikiText-2 frac {realized:.2f}"
-            + ("" if abs(realized - args.wikitext_frac) < 0.02 else ", capped by available WikiText-2")
-            + ")"
+        extra_corpora.append(("WikiText-2", wiki_examples, args.wikitext_frac))
+    if args.fineweb_frac > 0:
+        print(f"==> General-domain blend: streaming FineWeb (target frac {args.fineweb_frac:.2f})")
+        fineweb_examples = load_fineweb_train_examples(
+            tokenizer, max_length=args.max_length, max_examples=target_counts["FineWeb"],
+            dataset_name=args.fineweb_dataset, dataset_config=args.fineweb_config,
         )
+        extra_corpora.append(("FineWeb", fineweb_examples, args.fineweb_frac))
+
+    if extra_corpora:
+        n_alpaca = len(examples)
+        examples, taken_counts = build_blended_examples(examples, extra_corpora)
+        parts = [f"{n_alpaca} Alpaca"] + [f"{taken_counts[name]} {name}" for name, _, _ in extra_corpora]
+        print(f"    blended {' + '.join(parts)} = {len(examples)} examples")
+        for name, _, target_frac in extra_corpora:
+            realized = taken_counts[name] / len(examples) if examples else 0.0
+            print(
+                f"    {name}: realized frac {realized:.2f} (target {target_frac:.2f})"
+                + ("" if abs(realized - target_frac) < 0.02 else f", capped by available {name}")
+            )
 
     # If an example's instruction+input is long enough that truncating
     # prompt+response to --max-length cuts off the response entirely, every

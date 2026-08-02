@@ -1,6 +1,6 @@
 """Loads and formats QAT fine-tuning data.
 
-Two sources, blended (see build_blended_examples):
+Up to three sources, blended (see build_blended_examples):
   - Alpaca instruction data (prompt masked out of the loss).
   - WikiText-2 *train* split, plain language-modeling text (every token
     supervised). Mixing the eval domain into training -- WikiText-2 is also the
@@ -8,6 +8,19 @@ Two sources, blended (see build_blended_examples):
     domain mismatch. Recent low-bit-QAT work on Qwen3 reports meaningful
     perplexity gains from aligning the QAT data with the eval domain rather than
     training on instructions alone.
+  - FineWeb, a general web-text corpus (plain LM, every token supervised),
+    optional and off by default. Adds domain breadth beyond WikiText-2/Alpaca
+    without reintroducing the leakage this project already fixed once: it must
+    NOT overlap WikiText-2 (Wikipedia-derived) or C4 (results/c4_perplexity.json's
+    held-out generalization check). RedPajama/SlimPajama were considered first
+    but both are unusable here -- RedPajama-Data-1T is a legacy loading-script
+    dataset (datasets>=5 dropped script execution entirely) and SlimPajama-627B
+    is no longer accessible on the Hub under its published name. Both are also
+    mixtures that literally include C4 and Wikipedia as named sub-components,
+    so using them would have required carefully filtering those back out.
+    FineWeb (arXiv:2406.17557) is a cleaner fit: pure deduplicated CommonCrawl
+    text, no Wikipedia or C4 component at all, so it can't overlap either
+    corpus by construction, and it loads directly (parquet, no trust_remote_code).
 """
 import random
 
@@ -77,26 +90,119 @@ def load_wikitext2_train_examples(
     return examples
 
 
-def build_blended_examples(alpaca_examples: list[dict], wiki_examples: list[dict],
-                           wikitext_frac: float, seed: int = 0) -> list[dict]:
-    """Blend supervised Alpaca and WikiText-2 examples so that a ``wikitext_frac``
-    fraction of the returned examples are WikiText-2, then shuffle them together.
+def load_fineweb_train_examples(
+    tokenizer,
+    max_length: int = 512,
+    max_examples: int = 2000,
+    dataset_name: str = "HuggingFaceFW/fineweb",
+    dataset_config: str = "sample-10BT",
+) -> list[dict]:
+    """Plain language-modeling examples from FineWeb (arXiv:2406.17557), a
+    deduplicated CommonCrawl web-text corpus -- see the module docstring for
+    why this is the general-domain corpus used here instead of RedPajama/
+    SlimPajama.
 
-    Keeps all Alpaca examples and takes as many WikiText-2 examples as the ratio
-    calls for (capped by how many are available); if WikiText-2 is the limiting
-    side, the realized fraction is reported by the caller.
+    Streamed rather than downloaded whole (``sample-10BT`` alone is ~10B
+    tokens): documents are pulled in dataset order and accumulated until
+    there's roughly enough raw text for ``max_examples`` chunks of
+    ``max_length`` tokens (a ~4 chars/token heuristic, generous enough that
+    tokenizing rarely comes up short), then tokenized and cut into
+    contiguous ``max_length`` chunks exactly like
+    ``load_wikitext2_train_examples`` -- every token is a training target
+    (labels = input_ids, nothing masked).
+    """
+    ds = load_dataset(dataset_name, name=dataset_config, split="train", streaming=True)
+    target_chars = max_examples * max_length * 4
+    parts, total_chars = [], 0
+    for row in ds:
+        text = row.get("text", "").strip()
+        if not text:
+            continue
+        parts.append(text)
+        total_chars += len(text) + 1  # +1 for the joining newline
+        if total_chars >= target_chars:
+            break
+    text = "\n".join(parts)
+    ids = tokenizer(text)["input_ids"]
+
+    examples = []
+    for start in range(0, len(ids) - 1, max_length):
+        chunk = ids[start : start + max_length]
+        if len(chunk) < 2:  # need at least one (input, next-token) pair
+            continue
+        examples.append(
+            {
+                "input_ids": chunk,
+                "attention_mask": [1] * len(chunk),
+                "labels": list(chunk),  # plain LM: supervise every token
+            }
+        )
+        if len(examples) >= max_examples:
+            break
+    return examples
+
+
+def blend_target_counts(n_alpaca: int, fracs: dict[str, float]) -> dict[str, int]:
+    """How many examples each named corpus needs so that, blended with a
+    fixed ``n_alpaca`` Alpaca examples, it lands at its target fraction of
+    the FINAL blend -- e.g. ``{"wikitext2": 0.5, "fineweb": 0.2}`` means the
+    final mix is ~50% WikiText-2 / ~20% FineWeb / ~30% Alpaca. Fractions are
+    shares of the same total, not of each other, so order doesn't matter.
+
+    This is the count each corpus loader should be asked to PRODUCE (so a
+    3-way blend doesn't silently cap a source at whatever a 1- or 2-way
+    blend needed); build_blended_examples then re-derives the same counts to
+    select from the (possibly smaller, if a corpus ran short) loaded lists,
+    so the two stay consistent by construction.
+    """
+    active = {name: frac for name, frac in fracs.items() if frac > 0}
+    counts = {name: 0 for name in fracs}
+    if not active:
+        return counts
+    total_frac = sum(active.values())
+    if total_frac >= 1:
+        raise ValueError(f"corpus fractions must sum to less than 1 (got {total_frac})")
+    total = n_alpaca / (1 - total_frac)
+    counts.update({name: round(total * frac) for name, frac in active.items()})
+    return counts
+
+
+def build_blended_examples(
+    alpaca_examples: list[dict],
+    extra_corpora: list[tuple[str, list[dict], float]],
+    seed: int = 0,
+) -> tuple[list[dict], dict[str, int]]:
+    """Blend Alpaca instruction examples with zero or more plain-LM corpora
+    (WikiText-2, FineWeb, ...), each targeting a fraction of the FINAL blended
+    set (see blend_target_counts), then shuffle everything together.
+
+    ``extra_corpora`` is a list of ``(name, examples, target_frac)`` triples.
+    Alpaca always keeps every example; each other corpus contributes up to
+    its target count, capped by how many examples it actually loaded (in
+    which case the realized fraction -- returned per name -- is lower than
+    requested; callers should size their loader calls from
+    blend_target_counts to make that cap the exception, not the norm).
+
+    Returns ``(blended_examples, {name: n_taken})``.
     """
     n_alpaca = len(alpaca_examples)
-    if wikitext_frac <= 0 or not wiki_examples:
-        return list(alpaca_examples)
-    if wikitext_frac >= 1:
-        return list(wiki_examples)
-    # want n_wiki / (n_alpaca + n_wiki) == wikitext_frac
-    n_wiki_target = round(n_alpaca * wikitext_frac / (1 - wikitext_frac))
-    wiki = list(wiki_examples[:n_wiki_target])
-    blended = list(alpaca_examples) + wiki
+    active = [(name, examples, frac) for name, examples, frac in extra_corpora if frac > 0 and examples]
+    if not active:
+        return list(alpaca_examples), {name: 0 for name, _, _ in extra_corpora}
+
+    target_counts = blend_target_counts(n_alpaca, {name: frac for name, _, frac in active})
+
+    blended = list(alpaca_examples)
+    taken_counts = {}
+    for name, examples, _ in active:
+        taken = list(examples[: target_counts[name]])
+        blended.extend(taken)
+        taken_counts[name] = len(taken)
+    for name, _, _ in extra_corpora:
+        taken_counts.setdefault(name, 0)
+
     random.Random(seed).shuffle(blended)
-    return blended
+    return blended, taken_counts
 
 
 def _common_prefix_len(a: list[int], b: list[int]) -> int:
