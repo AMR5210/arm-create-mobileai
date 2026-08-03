@@ -58,6 +58,30 @@
       "wikitext2_ppl": 275.8938,
       "ratio_to_fp16_c4": 12.28,
       "ratio_to_fp16_wikitext2": 12.91
+    },
+    {
+      "id": "qat_q2k_fineweb_final",
+      "label": "QAT Q2_K, batch 24, wikitext-frac 0.05 + FineWeb 0.5 blend, final checkpoint (step 48828)",
+      "ppl": 32.2462,
+      "stderr": 0.28366,
+      "gguf": "models/qwen3-0.6b-qat-fineweb-final-q2_k.gguf",
+      "wikitext2_ppl": 18.4863,
+      "ratio_to_fp16_c4": 1.0948,
+      "ratio_to_fp16_wikitext2": 0.865,
+      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers",
+      "role": "NEW BEST, replacing qat_q2k_blend (55.9509 on C4, 1.90x fp16). Nearly closes the fp16 gap on C4 (1.09x) and actually BEATS raw fp16 on WikiText2 (0.87x) -- see analysis.batch24_fineweb_scaleup."
+    },
+    {
+      "id": "qat_q2k_fineweb_step47500",
+      "label": "QAT Q2_K, batch 24, wikitext-frac 0.05 + FineWeb 0.5 blend, safety-net checkpoint (step 47500)",
+      "ppl": 32.4342,
+      "stderr": 0.28589,
+      "gguf": "models/qwen3-0.6b-qat-fineweb-step47500-q2_k.gguf",
+      "wikitext2_ppl": 18.6311,
+      "ratio_to_fp16_c4": 1.1012,
+      "ratio_to_fp16_wikitext2": 0.8718,
+      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers",
+      "role": "Statistically indistinguishable from qat_q2k_fineweb_final (overlapping stderr). Kept for the record; see results/wikitext2_perplexity.json's analysis.batch24_fineweb_scaleup for why this checkpoint was measured (step-20000 trough checkpoint was unrecoverable) and why the final checkpoint should be promoted instead."
     }
   ],
   "analysis": {
@@ -80,6 +104,11 @@
       "note": "The Alpaca-only model barely moves in absolute terms (70.88 WikiText-2 -> 73.03 C4) and actually improves relative to fp16 (3.32x -> 2.48x).",
       "why": "It never saw WikiText-2 train text, so it had no domain advantage to lose. Its WikiText-2 score was, in effect, already an out-of-domain measurement."
     },
-    "caveat_c4_and_pretraining": "C4 is a common LLM pretraining corpus, so Qwen3-0.6B's base weights may well have seen C4-derived text. That affects all four rows equally (they share the same base model) and so does not bias the comparison between them, but it means C4 is 'not in the QAT fine-tuning mix', not 'never seen by the model'."
+    "caveat_c4_and_pretraining": "C4 is a common LLM pretraining corpus, so Qwen3-0.6B's base weights may well have seen C4-derived text. That affects all four rows equally (they share the same base model) and so does not bias the comparison between them, but it means C4 is 'not in the QAT fine-tuning mix', not 'never seen by the model'.",
+    "batch24_fineweb_scaleup": {
+      "note": "Cross-reference: full writeup and training-time-proxy-trough caveat is in results/wikitext2_perplexity.json's analysis.batch24_fineweb_scaleup. This is the C4 (held-out generalization) half of that result.",
+      "headline": "C4 improved MORE (in relative terms) than WikiText2 did: C4 -42.4% (55.95 -> 32.25) vs WikiText2 -31.4% (26.95 -> 18.49). Since this run deliberately traded WikiText-2-specific training data (frac 0.5 -> 0.05) for general FineWeb data (frac 0 -> 0.5), a larger C4 gain than WikiText2 gain is exactly the signal that matters here: the improvement is not domain-alignment inflation (that would show up as a WikiText2-skewed gain, the opposite pattern), it is genuine generalization from more diverse training data.",
+      "closes_most_of_the_fp16_gap": "The prior best was 1.90x worse than raw fp16 on C4 (55.95 vs 29.46). This run is only 1.09x worse (32.25 vs 29.46) -- 2-bit QAT with this recipe is now within ~9% of unquantized fp16 perplexity on a corpus it never trained on."
+    }
   }
 }

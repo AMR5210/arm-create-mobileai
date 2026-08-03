@@ -212,6 +212,32 @@
       "size_bytes": 490733568,
       "config": "CAKLD, roundtrip init, Alpaca only, 8 skip-layers; reported in commit 305836c",
       "role": "Historical reference carried over from commit 305836c. Quoted, not reproduced on this box. Its exact flags are not recorded in the repo; distill-weight 0.5 is from operator recollection, not a committed config."
+    },
+    {
+      "id": "qat_q2k_fineweb_final",
+      "label": "QAT Q2_K, batch 24, wikitext-frac 0.05 + FineWeb 0.5 blend, final checkpoint (step 48828)",
+      "ppl": 18.4863,
+      "stderr": 0.1512,
+      "measured": true,
+      "quant_function": "affine",
+      "bit_schedule": "anneal_4_to_2_over_150",
+      "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
+      "size_bytes": 495193952,
+      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers (all NOT matching common_training_config -- this run intentionally departs from it; see analysis.batch24_fineweb_scaleup)",
+      "role": "NEW BEST, replacing qat_q2k_blend (26.9519). See analysis.batch24_fineweb_scaleup for the full writeup, including the training-time proxy trough this run's exported number does NOT reflect."
+    },
+    {
+      "id": "qat_q2k_fineweb_step47500",
+      "label": "QAT Q2_K, batch 24, wikitext-frac 0.05 + FineWeb 0.5 blend, safety-net checkpoint (step 47500)",
+      "ppl": 18.6311,
+      "stderr": 0.1531,
+      "measured": true,
+      "quant_function": "affine",
+      "bit_schedule": "anneal_4_to_2_over_150",
+      "format": "GGUF Q2_K (187 Q2_K / 11 F16 / 113 copied -- one extra F16 tensor vs the final checkpoint's export, an untied embedding/lm_head duplicate from the raw safety-net state dict; cosmetic, does not affect the measured ppl)",
+      "size_bytes": 806358816,
+      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers (all NOT matching common_training_config -- this run intentionally departs from it; see analysis.batch24_fineweb_scaleup)",
+      "role": "Statistically indistinguishable from the final checkpoint (overlapping stderr intervals) -- see analysis.batch24_fineweb_scaleup. Kept for the record since it was exported and measured, but the final checkpoint (qat_q2k_fineweb_final) is the one to promote; no real advantage to preferring this one."
     }
   ],
   "analysis": {
@@ -261,9 +287,24 @@
       "note": "Sliced-Wasserstein + MSE hidden-state block alignment (arXiv:2601.07878, --distill-loss wasserstein) evaluated against CAKLD as the distillation objective. CLOSED: neither the initial run nor the scale-matched sweep beat CAKLD, and no further variations will be run on this project.",
       "verdict": "CAKLD wins. Best Wasserstein result is 27.4029 (distill-weight 0.05) vs CAKLD's 26.9519. The intervals [27.179, 27.627] and [26.732, 27.171] do not overlap, though only barely -- they are adjacent. So this is a real but small loss, not a rout.",
       "sweep": [
-        {"distill_weight": 0.05, "kd_share": "13%", "ppl": 27.4029, "training_proxy": 19.9193},
-        {"distill_weight": 0.1, "kd_share": "31%", "ppl": 28.0482, "training_proxy": 20.1697},
-        {"distill_weight": 0.5, "kd_share": "69-74%", "ppl": 30.7124, "training_proxy": 21.6378}
+        {
+          "distill_weight": 0.05,
+          "kd_share": "13%",
+          "ppl": 27.4029,
+          "training_proxy": 19.9193
+        },
+        {
+          "distill_weight": 0.1,
+          "kd_share": "31%",
+          "ppl": 28.0482,
+          "training_proxy": 20.1697
+        },
+        {
+          "distill_weight": 0.5,
+          "kd_share": "69-74%",
+          "ppl": 30.7124,
+          "training_proxy": 21.6378
+        }
       ],
       "monotone_trend": "Quality degrades monotonically as the Wasserstein weight rises (27.40 -> 28.05 -> 30.71). The best tested weight is the smallest one, so within the range tested the term is a net negative at every setting. CAUTION: a distill-weight 0 point was NOT run, so this does not establish that the optimum is at zero -- only that quality is decreasing in weight across the three points measured.",
       "weight_scale_confound": {
@@ -280,6 +321,13 @@
       "why_it_matters": "alpha < 0 silently mirrors a group's quantization grid; alpha == 0 makes the backward's W_Q/alpha term 0/0 = NaN, which the |u| < 1 indicator cannot mask because nan * 0 == nan.",
       "fix": "abs().clamp_min(_EPS) on alpha in seq_fake_quant -- an exact identity for every alpha > _EPS, so all measured SEQ results above remain reproducible from the fixed code (verified bit-identical forward for positive alpha).",
       "alpha_does_train": "All 187 alpha tensors moved; mean relative change 0.14% at 100 steps growing to larger movement by 1000 (largest mover layers.16.mlp.up_proj at 2.02%). Not stuck at init."
+    },
+    "batch24_fineweb_scaleup": {
+      "note": "Full-scale run (48828 steps, ~600M tokens, batch 24, lr 2.5e-5) testing whether reducing WikiText-2's share of the training blend (0.5 -> 0.05) and adding general-domain FineWeb data (0.5 share, see qat/data.py module docstring for why FineWeb over RedPajama/SlimPajama) generalizes better than the prior WikiText-heavy recipe -- motivated by the prior recipe's ~119x repetition of the 2.5M-token WikiText-2 train corpus at this token budget being a real memorization risk.",
+      "result": "Both eval sets improved sharply over the prior best (qat_q2k_blend): WikiText2 26.9519 -> 18.4863 (-31.4% relative), C4 55.9509 -> 32.2462 (-42.4% relative). The C4 (held-out, non-domain-matched) improvement is LARGER than the WikiText2 one, which is the result this run was actually testing for: the gain is not just domain-alignment inflation, it reflects genuine generalization improvement from the more diverse data mix.",
+      "training_time_proxy_trough_caveat": "The in-training (truncated, 20k-token) WikiText2 ppl proxy bottomed at step ~19,200 (~13.07) then drifted upward to 14.30 by the final step 48828 -- a real, gradual drift, not noise, plausibly from the ~12-13x repetition of this run's own (much smaller than before, but still finite) data pool late in training. The step-20,000 safety-net checkpoint, which would have let us test whether that trough held up under the REAL llama-perplexity/GGUF measurement, was UNRECOVERABLE: every train_qat.py --save-every checkpoint before this run's fix (see git log, 'Fix safety-net checkpoint overwrite') wrote to the same fixed filename, so each save silently overwrote the last, leaving only the step-47500 save by the time training finished.",
+      "step47500_vs_final_result": "Measured step 47500 anyway (the only other checkpoint that survived) against both eval sets as the closest available substitute: WikiText2 18.6311 +/- 0.1531 and C4 32.4342 +/- 0.2859, both statistically indistinguishable from the final checkpoint's 18.4863 +/- 0.1512 / 32.2462 +/- 0.2837 (overlapping stderr intervals). So on the REAL measurement, the late-training drift visible in the training-time proxy did NOT show up as a meaningful difference between these two nearby (1328-step-apart) points -- both are dramatically better than the prior recipe regardless. Whether the TRUE step-19,200 trough would have measured even better than either is now unknowable for this run; the checkpoint-overwrite bug is fixed for future ones.",
+      "conclusion": "Promote qat_q2k_fineweb_final as the new best. No real basis to prefer the step-47500 checkpoint over it."
     }
   }
 }

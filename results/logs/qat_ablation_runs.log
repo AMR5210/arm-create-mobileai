@@ -372,3 +372,304 @@ step 1000/1000  loss=4.1644  hard_loss=2.8892  kd_loss=12.7526  wikitext2_ppl=20
 ==> Saving HF checkpoint to models/qwen3-0.6b-qat-wass-dw01-hf
 ==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
 
+
+================================================================
+== Batch-24/lr-2.5e-5 scale-up: wikitext-frac 0.05 + FineWeb 0.5 blend (repo ed13658)
+== 48828 steps (~600M tokens), max-examples 44000, save-every 2500
+================================================================
+==> Loading base model from models/qwen3-0.6b-hf
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+==> Loading 44000 examples from tatsu-lab/alpaca
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+==> Domain alignment: blending in WikiText-2 train text (target frac 0.05)
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (2517232 > 131072). Running this sequence through the model will result in indexing errors
+==> General-domain blend: streaming FineWeb (target frac 0.50)
+    blended 44000 Alpaca + 4889 WikiText-2 + 43705 FineWeb = 92594 examples
+    WikiText-2: realized frac 0.05 (target 0.05)
+    FineWeb: realized frac 0.47 (target 0.50), capped by available FineWeb
+    dropped 1 example(s) whose response was fully truncated away by --max-length 512 (no supervision signal left)
+==> Wrapping linear layers with fake-quantization (target 2-bit, initialized from dequantized PTQ-2bit (Q2_K) weights, group size 16)
+    wrapped 187 linear layers  (quant-function: affine)
+    kept at full precision (mixed-precision): layers.16.self_attn.k_proj, layers.21.self_attn.k_proj, layers.8.self_attn.k_proj, layers.27.self_attn.k_proj, layers.26.mlp.gate_proj, layers.26.mlp.up_proj, layers.27.mlp.gate_proj, layers.27.mlp.up_proj, layers.2.mlp.down_proj
+    shadow-weight init: {'ptq_q2k': 187} (ptq_q2k = dequantized real PTQ-2bit weights)
+==> Loading frozen teacher from models/qwen3-0.6b-hf (distill_weight=0.5, distill_loss=cakld)
+    CAKLD gamma (teacher confidence on response tokens): 0.3024
+==> Progressive bit-width: forward starts at 4-bit, annealing to 2-bit over 150 steps
+==> Safety-net checkpoints will be written to models/qwen3-0.6b-qat-fineweb-hf-partial every 2500 steps
+==> WikiText-2 perplexity right after fake-quant wrapping (pre fine-tune)
+    perplexity: 16813.9512
+step 200/48828  loss=4.0655  hard_loss=3.6980  kd_loss=0.7350  wikitext2_ppl=22.0151  bits=2  lr=2.49e-05  grad_norm=4.946
+step 400/48828  loss=3.9245  hard_loss=3.5989  kd_loss=0.6512  wikitext2_ppl=19.8773  bits=2  lr=2.48e-05  grad_norm=4.667
+step 600/48828  loss=3.9959  hard_loss=3.6799  kd_loss=0.6321  wikitext2_ppl=18.5922  bits=2  lr=2.47e-05  grad_norm=4.231
+step 800/48828  loss=3.7364  hard_loss=3.4517  kd_loss=0.5693  wikitext2_ppl=17.9940  bits=2  lr=2.46e-05  grad_norm=4.115
+step 1000/48828  loss=3.6373  hard_loss=3.3378  kd_loss=0.5991  wikitext2_ppl=17.4841  bits=2  lr=2.45e-05  grad_norm=4.326
+step 1200/48828  loss=3.6650  hard_loss=3.3956  kd_loss=0.5387  wikitext2_ppl=17.0824  bits=2  lr=2.44e-05  grad_norm=4.373
+step 1400/48828  loss=3.4265  hard_loss=3.1714  kd_loss=0.5101  wikitext2_ppl=16.7780  bits=2  lr=2.43e-05  grad_norm=4.478
+step 1600/48828  loss=3.5505  hard_loss=3.2662  kd_loss=0.5686  wikitext2_ppl=16.4553  bits=2  lr=2.42e-05  grad_norm=3.920
+step 1800/48828  loss=3.4671  hard_loss=3.2157  kd_loss=0.5029  wikitext2_ppl=16.2375  bits=2  lr=2.41e-05  grad_norm=4.002
+step 2000/48828  loss=3.4397  hard_loss=3.1969  kd_loss=0.4857  wikitext2_ppl=15.8884  bits=2  lr=2.40e-05  grad_norm=3.711
+step 2200/48828  loss=3.6320  hard_loss=3.3914  kd_loss=0.4813  wikitext2_ppl=15.7493  bits=2  lr=2.39e-05  grad_norm=3.371
+step 2400/48828  loss=3.2403  hard_loss=2.9521  kd_loss=0.5764  wikitext2_ppl=15.5130  bits=2  lr=2.38e-05  grad_norm=6.300
+    [checkpoint] step 2500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 2600/48828  loss=3.4536  hard_loss=3.2248  kd_loss=0.4575  wikitext2_ppl=15.3286  bits=2  lr=2.37e-05  grad_norm=3.589
+step 2800/48828  loss=3.6320  hard_loss=3.3791  kd_loss=0.5057  wikitext2_ppl=15.1179  bits=2  lr=2.36e-05  grad_norm=3.857
+step 3000/48828  loss=3.6416  hard_loss=3.3893  kd_loss=0.5045  wikitext2_ppl=14.9600  bits=2  lr=2.35e-05  grad_norm=3.700
+step 3200/48828  loss=3.3157  hard_loss=3.0858  kd_loss=0.4598  wikitext2_ppl=14.9129  bits=2  lr=2.34e-05  grad_norm=3.643
+step 3400/48828  loss=3.6484  hard_loss=3.4061  kd_loss=0.4846  wikitext2_ppl=14.8169  bits=2  lr=2.33e-05  grad_norm=3.709
+step 3600/48828  loss=3.5939  hard_loss=3.3613  kd_loss=0.4652  wikitext2_ppl=14.8134  bits=2  lr=2.32e-05  grad_norm=3.581
+step 3800/48828  loss=3.4534  hard_loss=3.2151  kd_loss=0.4766  wikitext2_ppl=14.7057  bits=2  lr=2.31e-05  grad_norm=3.482
+step 4000/48828  loss=3.1985  hard_loss=3.0027  kd_loss=0.3916  wikitext2_ppl=14.5490  bits=2  lr=2.30e-05  grad_norm=3.241
+step 4200/48828  loss=3.6940  hard_loss=3.4589  kd_loss=0.4702  wikitext2_ppl=14.5080  bits=2  lr=2.29e-05  grad_norm=3.813
+step 4400/48828  loss=3.1926  hard_loss=2.9747  kd_loss=0.4358  wikitext2_ppl=14.3692  bits=2  lr=2.28e-05  grad_norm=3.749
+step 4600/48828  loss=3.3830  hard_loss=3.1638  kd_loss=0.4384  wikitext2_ppl=14.2862  bits=2  lr=2.27e-05  grad_norm=3.538
+step 4800/48828  loss=3.2912  hard_loss=3.0726  kd_loss=0.4371  wikitext2_ppl=14.1880  bits=2  lr=2.26e-05  grad_norm=3.919
+step 5000/48828  loss=3.3219  hard_loss=3.1150  kd_loss=0.4138  wikitext2_ppl=14.2352  bits=2  lr=2.25e-05  grad_norm=3.082
+    [checkpoint] step 5000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 5200/48828  loss=3.5242  hard_loss=3.2979  kd_loss=0.4526  wikitext2_ppl=14.1976  bits=2  lr=2.24e-05  grad_norm=3.572
+step 5400/48828  loss=3.4727  hard_loss=3.2473  kd_loss=0.4510  wikitext2_ppl=14.0865  bits=2  lr=2.23e-05  grad_norm=3.192
+step 5600/48828  loss=3.2832  hard_loss=3.0519  kd_loss=0.4625  wikitext2_ppl=14.0665  bits=2  lr=2.22e-05  grad_norm=3.250
+step 5800/48828  loss=3.2587  hard_loss=3.0500  kd_loss=0.4174  wikitext2_ppl=14.0974  bits=2  lr=2.21e-05  grad_norm=3.444
+step 6000/48828  loss=3.0972  hard_loss=2.8882  kd_loss=0.4180  wikitext2_ppl=14.0471  bits=2  lr=2.20e-05  grad_norm=3.071
+step 6200/48828  loss=3.3570  hard_loss=3.1486  kd_loss=0.4167  wikitext2_ppl=14.0668  bits=2  lr=2.18e-05  grad_norm=3.058
+step 6400/48828  loss=3.2940  hard_loss=3.0989  kd_loss=0.3903  wikitext2_ppl=13.9585  bits=2  lr=2.17e-05  grad_norm=2.800
+step 6600/48828  loss=3.2994  hard_loss=3.0975  kd_loss=0.4039  wikitext2_ppl=13.9043  bits=2  lr=2.16e-05  grad_norm=3.694
+step 6800/48828  loss=3.3349  hard_loss=3.1109  kd_loss=0.4479  wikitext2_ppl=13.9716  bits=2  lr=2.15e-05  grad_norm=3.126
+step 7000/48828  loss=3.4851  hard_loss=3.2750  kd_loss=0.4202  wikitext2_ppl=13.8855  bits=2  lr=2.14e-05  grad_norm=3.184
+step 7200/48828  loss=3.1326  hard_loss=2.9286  kd_loss=0.4080  wikitext2_ppl=13.8415  bits=2  lr=2.13e-05  grad_norm=3.473
+step 7400/48828  loss=3.3460  hard_loss=3.1280  kd_loss=0.4359  wikitext2_ppl=13.7743  bits=2  lr=2.12e-05  grad_norm=3.628
+    [checkpoint] step 7500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 7600/48828  loss=3.1024  hard_loss=2.8976  kd_loss=0.4096  wikitext2_ppl=13.7409  bits=2  lr=2.11e-05  grad_norm=3.164
+step 7800/48828  loss=3.1903  hard_loss=2.9763  kd_loss=0.4280  wikitext2_ppl=13.7189  bits=2  lr=2.10e-05  grad_norm=3.269
+step 8000/48828  loss=3.0887  hard_loss=2.8865  kd_loss=0.4044  wikitext2_ppl=13.6839  bits=2  lr=2.09e-05  grad_norm=3.700
+step 8200/48828  loss=3.3310  hard_loss=3.1300  kd_loss=0.4021  wikitext2_ppl=13.6781  bits=2  lr=2.08e-05  grad_norm=3.059
+step 8400/48828  loss=3.1298  hard_loss=2.9273  kd_loss=0.4051  wikitext2_ppl=13.6311  bits=2  lr=2.07e-05  grad_norm=2.813
+step 8600/48828  loss=3.2447  hard_loss=3.0209  kd_loss=0.4477  wikitext2_ppl=13.6598  bits=2  lr=2.06e-05  grad_norm=3.626
+step 8800/48828  loss=3.0981  hard_loss=2.8773  kd_loss=0.4417  wikitext2_ppl=13.6491  bits=2  lr=2.05e-05  grad_norm=3.337
+step 9000/48828  loss=3.1501  hard_loss=2.9420  kd_loss=0.4163  wikitext2_ppl=13.5671  bits=2  lr=2.04e-05  grad_norm=3.084
+step 9200/48828  loss=3.0670  hard_loss=2.8427  kd_loss=0.4487  wikitext2_ppl=13.4618  bits=2  lr=2.03e-05  grad_norm=3.020
+step 9400/48828  loss=2.9899  hard_loss=2.7724  kd_loss=0.4351  wikitext2_ppl=13.5359  bits=2  lr=2.02e-05  grad_norm=3.222
+step 9600/48828  loss=3.3030  hard_loss=3.1057  kd_loss=0.3947  wikitext2_ppl=13.5209  bits=2  lr=2.01e-05  grad_norm=2.963
+step 9800/48828  loss=3.3214  hard_loss=3.1197  kd_loss=0.4034  wikitext2_ppl=13.4672  bits=2  lr=2.00e-05  grad_norm=3.112
+step 10000/48828  loss=3.2613  hard_loss=3.0563  kd_loss=0.4100  wikitext2_ppl=13.4296  bits=2  lr=1.99e-05  grad_norm=3.522
+    [checkpoint] step 10000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 10200/48828  loss=3.4681  hard_loss=3.2444  kd_loss=0.4474  wikitext2_ppl=13.3939  bits=2  lr=1.98e-05  grad_norm=3.011
+step 10400/48828  loss=3.3643  hard_loss=3.1449  kd_loss=0.4389  wikitext2_ppl=13.4866  bits=2  lr=1.97e-05  grad_norm=2.736
+step 10600/48828  loss=3.1577  hard_loss=2.9607  kd_loss=0.3940  wikitext2_ppl=13.4184  bits=2  lr=1.96e-05  grad_norm=3.067
+step 10800/48828  loss=3.1824  hard_loss=2.9846  kd_loss=0.3957  wikitext2_ppl=13.4038  bits=2  lr=1.95e-05  grad_norm=2.858
+step 11000/48828  loss=3.1246  hard_loss=2.9165  kd_loss=0.4163  wikitext2_ppl=13.2834  bits=2  lr=1.94e-05  grad_norm=3.217
+step 11200/48828  loss=3.0474  hard_loss=2.8522  kd_loss=0.3904  wikitext2_ppl=13.4232  bits=2  lr=1.93e-05  grad_norm=2.970
+step 11400/48828  loss=3.0962  hard_loss=2.8945  kd_loss=0.4035  wikitext2_ppl=13.2591  bits=2  lr=1.92e-05  grad_norm=2.971
+step 11600/48828  loss=2.9349  hard_loss=2.7361  kd_loss=0.3975  wikitext2_ppl=13.3261  bits=2  lr=1.91e-05  grad_norm=2.859
+step 11800/48828  loss=3.2213  hard_loss=3.0051  kd_loss=0.4325  wikitext2_ppl=13.3944  bits=2  lr=1.90e-05  grad_norm=3.224
+step 12000/48828  loss=3.1310  hard_loss=2.9249  kd_loss=0.4123  wikitext2_ppl=13.3837  bits=2  lr=1.89e-05  grad_norm=2.718
+step 12200/48828  loss=2.9865  hard_loss=2.7705  kd_loss=0.4320  wikitext2_ppl=13.3894  bits=2  lr=1.88e-05  grad_norm=3.050
+step 12400/48828  loss=3.2191  hard_loss=3.0123  kd_loss=0.4135  wikitext2_ppl=13.3122  bits=2  lr=1.87e-05  grad_norm=2.772
+    [checkpoint] step 12500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 12600/48828  loss=2.8841  hard_loss=2.6807  kd_loss=0.4069  wikitext2_ppl=13.3140  bits=2  lr=1.86e-05  grad_norm=2.816
+step 12800/48828  loss=3.0105  hard_loss=2.7887  kd_loss=0.4437  wikitext2_ppl=13.3668  bits=2  lr=1.85e-05  grad_norm=3.012
+step 13000/48828  loss=3.1655  hard_loss=2.9546  kd_loss=0.4217  wikitext2_ppl=13.3669  bits=2  lr=1.84e-05  grad_norm=2.699
+step 13200/48828  loss=3.2280  hard_loss=3.0182  kd_loss=0.4197  wikitext2_ppl=13.4260  bits=2  lr=1.83e-05  grad_norm=2.755
+step 13400/48828  loss=2.8345  hard_loss=2.6368  kd_loss=0.3954  wikitext2_ppl=13.3592  bits=2  lr=1.82e-05  grad_norm=2.632
+step 13600/48828  loss=3.2282  hard_loss=3.0063  kd_loss=0.4439  wikitext2_ppl=13.2918  bits=2  lr=1.81e-05  grad_norm=3.279
+step 13800/48828  loss=2.9785  hard_loss=2.7738  kd_loss=0.4094  wikitext2_ppl=13.2703  bits=2  lr=1.80e-05  grad_norm=2.947
+step 14000/48828  loss=3.0563  hard_loss=2.8504  kd_loss=0.4119  wikitext2_ppl=13.3291  bits=2  lr=1.79e-05  grad_norm=3.205
+step 14200/48828  loss=3.2058  hard_loss=3.0040  kd_loss=0.4035  wikitext2_ppl=13.3274  bits=2  lr=1.77e-05  grad_norm=3.030
+step 14400/48828  loss=3.2498  hard_loss=3.0460  kd_loss=0.4075  wikitext2_ppl=13.3805  bits=2  lr=1.76e-05  grad_norm=2.742
+step 14600/48828  loss=2.9967  hard_loss=2.7825  kd_loss=0.4284  wikitext2_ppl=13.2477  bits=2  lr=1.75e-05  grad_norm=2.717
+step 14800/48828  loss=3.0288  hard_loss=2.8210  kd_loss=0.4156  wikitext2_ppl=13.2666  bits=2  lr=1.74e-05  grad_norm=3.095
+step 15000/48828  loss=3.1906  hard_loss=2.9900  kd_loss=0.4012  wikitext2_ppl=13.2438  bits=2  lr=1.73e-05  grad_norm=2.964
+    [checkpoint] step 15000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 15200/48828  loss=3.1958  hard_loss=2.9860  kd_loss=0.4197  wikitext2_ppl=13.2730  bits=2  lr=1.72e-05  grad_norm=3.149
+step 15400/48828  loss=2.8307  hard_loss=2.6411  kd_loss=0.3790  wikitext2_ppl=13.1506  bits=2  lr=1.71e-05  grad_norm=3.200
+step 15600/48828  loss=2.9023  hard_loss=2.7040  kd_loss=0.3967  wikitext2_ppl=13.3761  bits=2  lr=1.70e-05  grad_norm=3.480
+step 15800/48828  loss=2.8554  hard_loss=2.6426  kd_loss=0.4256  wikitext2_ppl=13.3725  bits=2  lr=1.69e-05  grad_norm=2.956
+step 16000/48828  loss=2.7914  hard_loss=2.5904  kd_loss=0.4019  wikitext2_ppl=13.3634  bits=2  lr=1.68e-05  grad_norm=2.985
+step 16200/48828  loss=3.2166  hard_loss=2.9913  kd_loss=0.4507  wikitext2_ppl=13.3259  bits=2  lr=1.67e-05  grad_norm=2.695
+step 16400/48828  loss=3.0417  hard_loss=2.8197  kd_loss=0.4440  wikitext2_ppl=13.3322  bits=2  lr=1.66e-05  grad_norm=2.649
+step 16600/48828  loss=2.9353  hard_loss=2.7313  kd_loss=0.4079  wikitext2_ppl=13.3396  bits=2  lr=1.65e-05  grad_norm=3.115
+step 16800/48828  loss=3.0707  hard_loss=2.8668  kd_loss=0.4078  wikitext2_ppl=13.3118  bits=2  lr=1.64e-05  grad_norm=2.828
+step 17000/48828  loss=3.0798  hard_loss=2.8628  kd_loss=0.4341  wikitext2_ppl=13.3553  bits=2  lr=1.63e-05  grad_norm=2.854
+step 17200/48828  loss=3.1543  hard_loss=2.9428  kd_loss=0.4231  wikitext2_ppl=13.2356  bits=2  lr=1.62e-05  grad_norm=2.769
+step 17400/48828  loss=2.9207  hard_loss=2.6974  kd_loss=0.4464  wikitext2_ppl=13.2701  bits=2  lr=1.61e-05  grad_norm=2.542
+    [checkpoint] step 17500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 17600/48828  loss=2.8826  hard_loss=2.6628  kd_loss=0.4396  wikitext2_ppl=13.3194  bits=2  lr=1.60e-05  grad_norm=2.827
+step 17800/48828  loss=2.9950  hard_loss=2.7681  kd_loss=0.4539  wikitext2_ppl=13.2053  bits=2  lr=1.59e-05  grad_norm=3.312
+step 18000/48828  loss=2.9349  hard_loss=2.7212  kd_loss=0.4275  wikitext2_ppl=13.1063  bits=2  lr=1.58e-05  grad_norm=2.709
+step 18200/48828  loss=3.1724  hard_loss=2.9505  kd_loss=0.4438  wikitext2_ppl=13.2458  bits=2  lr=1.57e-05  grad_norm=3.236
+step 18400/48828  loss=3.0055  hard_loss=2.7851  kd_loss=0.4407  wikitext2_ppl=13.2811  bits=2  lr=1.56e-05  grad_norm=2.767
+step 18600/48828  loss=2.9632  hard_loss=2.7625  kd_loss=0.4012  wikitext2_ppl=13.1482  bits=2  lr=1.55e-05  grad_norm=2.892
+step 18800/48828  loss=2.9632  hard_loss=2.7240  kd_loss=0.4784  wikitext2_ppl=13.2375  bits=2  lr=1.54e-05  grad_norm=3.070
+step 19000/48828  loss=3.0168  hard_loss=2.7923  kd_loss=0.4490  wikitext2_ppl=13.2561  bits=2  lr=1.53e-05  grad_norm=3.380
+step 19200/48828  loss=3.0844  hard_loss=2.8642  kd_loss=0.4403  wikitext2_ppl=13.0698  bits=2  lr=1.52e-05  grad_norm=2.743
+step 19400/48828  loss=3.0362  hard_loss=2.8050  kd_loss=0.4623  wikitext2_ppl=13.3658  bits=2  lr=1.51e-05  grad_norm=2.530
+step 19600/48828  loss=2.7969  hard_loss=2.5865  kd_loss=0.4209  wikitext2_ppl=13.3205  bits=2  lr=1.50e-05  grad_norm=2.722
+step 19800/48828  loss=2.7788  hard_loss=2.5574  kd_loss=0.4429  wikitext2_ppl=13.3979  bits=2  lr=1.49e-05  grad_norm=2.494
+step 20000/48828  loss=3.0083  hard_loss=2.7826  kd_loss=0.4514  wikitext2_ppl=13.3948  bits=2  lr=1.48e-05  grad_norm=3.116
+    [checkpoint] step 20000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 20200/48828  loss=2.8528  hard_loss=2.6131  kd_loss=0.4794  wikitext2_ppl=13.4651  bits=2  lr=1.47e-05  grad_norm=2.763
+step 20400/48828  loss=3.0724  hard_loss=2.8643  kd_loss=0.4161  wikitext2_ppl=13.3027  bits=2  lr=1.46e-05  grad_norm=2.979
+step 20600/48828  loss=3.0072  hard_loss=2.7718  kd_loss=0.4707  wikitext2_ppl=13.4199  bits=2  lr=1.45e-05  grad_norm=2.783
+step 20800/48828  loss=2.6491  hard_loss=2.4232  kd_loss=0.4519  wikitext2_ppl=13.4648  bits=2  lr=1.44e-05  grad_norm=3.434
+step 21000/48828  loss=3.1080  hard_loss=2.8850  kd_loss=0.4459  wikitext2_ppl=13.3579  bits=2  lr=1.43e-05  grad_norm=2.767
+step 21200/48828  loss=3.2177  hard_loss=2.9975  kd_loss=0.4403  wikitext2_ppl=13.3179  bits=2  lr=1.42e-05  grad_norm=2.933
+step 21400/48828  loss=2.9890  hard_loss=2.7740  kd_loss=0.4301  wikitext2_ppl=13.2899  bits=2  lr=1.41e-05  grad_norm=2.777
+step 21600/48828  loss=2.8483  hard_loss=2.6291  kd_loss=0.4385  wikitext2_ppl=13.2921  bits=2  lr=1.40e-05  grad_norm=2.588
+step 21800/48828  loss=2.7296  hard_loss=2.5137  kd_loss=0.4317  wikitext2_ppl=13.2793  bits=2  lr=1.39e-05  grad_norm=2.799
+step 22000/48828  loss=2.8382  hard_loss=2.6270  kd_loss=0.4222  wikitext2_ppl=13.3401  bits=2  lr=1.38e-05  grad_norm=2.983
+step 22200/48828  loss=2.8443  hard_loss=2.6266  kd_loss=0.4353  wikitext2_ppl=13.2642  bits=2  lr=1.36e-05  grad_norm=2.748
+step 22400/48828  loss=2.9734  hard_loss=2.7601  kd_loss=0.4265  wikitext2_ppl=13.3490  bits=2  lr=1.35e-05  grad_norm=3.307
+    [checkpoint] step 22500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 22600/48828  loss=2.7010  hard_loss=2.4745  kd_loss=0.4530  wikitext2_ppl=13.3081  bits=2  lr=1.34e-05  grad_norm=2.667
+step 22800/48828  loss=3.0906  hard_loss=2.8764  kd_loss=0.4283  wikitext2_ppl=13.3610  bits=2  lr=1.33e-05  grad_norm=2.839
+step 23000/48828  loss=2.9372  hard_loss=2.7230  kd_loss=0.4285  wikitext2_ppl=13.2907  bits=2  lr=1.32e-05  grad_norm=2.692
+step 23200/48828  loss=2.5948  hard_loss=2.3602  kd_loss=0.4691  wikitext2_ppl=13.4840  bits=2  lr=1.31e-05  grad_norm=2.771
+step 23400/48828  loss=2.8577  hard_loss=2.6300  kd_loss=0.4555  wikitext2_ppl=13.5115  bits=2  lr=1.30e-05  grad_norm=3.301
+step 23600/48828  loss=2.6109  hard_loss=2.3846  kd_loss=0.4525  wikitext2_ppl=13.5141  bits=2  lr=1.29e-05  grad_norm=3.043
+step 23800/48828  loss=2.6991  hard_loss=2.4616  kd_loss=0.4750  wikitext2_ppl=13.4989  bits=2  lr=1.28e-05  grad_norm=3.009
+step 24000/48828  loss=2.7417  hard_loss=2.4862  kd_loss=0.5110  wikitext2_ppl=13.5137  bits=2  lr=1.27e-05  grad_norm=2.935
+step 24200/48828  loss=2.8752  hard_loss=2.6505  kd_loss=0.4493  wikitext2_ppl=13.5299  bits=2  lr=1.26e-05  grad_norm=3.045
+step 24400/48828  loss=2.9771  hard_loss=2.7374  kd_loss=0.4796  wikitext2_ppl=13.4226  bits=2  lr=1.25e-05  grad_norm=2.950
+step 24600/48828  loss=2.8101  hard_loss=2.5580  kd_loss=0.5041  wikitext2_ppl=13.4467  bits=2  lr=1.24e-05  grad_norm=3.059
+step 24800/48828  loss=2.8622  hard_loss=2.6441  kd_loss=0.4362  wikitext2_ppl=13.5171  bits=2  lr=1.23e-05  grad_norm=3.029
+step 25000/48828  loss=2.8120  hard_loss=2.5826  kd_loss=0.4588  wikitext2_ppl=13.5410  bits=2  lr=1.22e-05  grad_norm=2.830
+    [checkpoint] step 25000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 25200/48828  loss=2.9881  hard_loss=2.7626  kd_loss=0.4510  wikitext2_ppl=13.4763  bits=2  lr=1.21e-05  grad_norm=2.924
+step 25400/48828  loss=2.8686  hard_loss=2.6381  kd_loss=0.4610  wikitext2_ppl=13.4168  bits=2  lr=1.20e-05  grad_norm=2.790
+step 25600/48828  loss=2.8712  hard_loss=2.6331  kd_loss=0.4762  wikitext2_ppl=13.4527  bits=2  lr=1.19e-05  grad_norm=2.857
+step 25800/48828  loss=3.1102  hard_loss=2.8798  kd_loss=0.4609  wikitext2_ppl=13.4728  bits=2  lr=1.18e-05  grad_norm=2.963
+step 26000/48828  loss=3.0074  hard_loss=2.7687  kd_loss=0.4774  wikitext2_ppl=13.3432  bits=2  lr=1.17e-05  grad_norm=2.864
+step 26200/48828  loss=3.0180  hard_loss=2.7883  kd_loss=0.4596  wikitext2_ppl=13.3713  bits=2  lr=1.16e-05  grad_norm=2.478
+step 26400/48828  loss=2.8897  hard_loss=2.6589  kd_loss=0.4617  wikitext2_ppl=13.5172  bits=2  lr=1.15e-05  grad_norm=2.603
+step 26600/48828  loss=2.8550  hard_loss=2.6393  kd_loss=0.4314  wikitext2_ppl=13.4832  bits=2  lr=1.14e-05  grad_norm=2.867
+step 26800/48828  loss=2.9793  hard_loss=2.7427  kd_loss=0.4731  wikitext2_ppl=13.4741  bits=2  lr=1.13e-05  grad_norm=2.715
+step 27000/48828  loss=2.8778  hard_loss=2.6478  kd_loss=0.4599  wikitext2_ppl=13.4024  bits=2  lr=1.12e-05  grad_norm=3.017
+step 27200/48828  loss=2.6663  hard_loss=2.4083  kd_loss=0.5160  wikitext2_ppl=13.6162  bits=2  lr=1.11e-05  grad_norm=2.826
+step 27400/48828  loss=2.7440  hard_loss=2.5044  kd_loss=0.4791  wikitext2_ppl=13.7112  bits=2  lr=1.10e-05  grad_norm=2.710
+    [checkpoint] step 27500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 27600/48828  loss=2.6849  hard_loss=2.4506  kd_loss=0.4685  wikitext2_ppl=13.7345  bits=2  lr=1.09e-05  grad_norm=2.647
+step 27800/48828  loss=2.8674  hard_loss=2.6221  kd_loss=0.4906  wikitext2_ppl=13.6300  bits=2  lr=1.08e-05  grad_norm=2.651
+step 28000/48828  loss=2.9368  hard_loss=2.6815  kd_loss=0.5106  wikitext2_ppl=13.7555  bits=2  lr=1.07e-05  grad_norm=2.753
+step 28200/48828  loss=2.6667  hard_loss=2.4454  kd_loss=0.4425  wikitext2_ppl=13.7085  bits=2  lr=1.06e-05  grad_norm=2.659
+step 28400/48828  loss=2.7568  hard_loss=2.5165  kd_loss=0.4806  wikitext2_ppl=13.5608  bits=2  lr=1.05e-05  grad_norm=2.753
+step 28600/48828  loss=2.7901  hard_loss=2.5472  kd_loss=0.4857  wikitext2_ppl=13.6069  bits=2  lr=1.04e-05  grad_norm=2.926
+step 28800/48828  loss=2.4031  hard_loss=2.1564  kd_loss=0.4934  wikitext2_ppl=13.5521  bits=2  lr=1.03e-05  grad_norm=3.225
+step 29000/48828  loss=2.8042  hard_loss=2.5636  kd_loss=0.4812  wikitext2_ppl=13.5174  bits=2  lr=1.02e-05  grad_norm=3.117
+step 29200/48828  loss=2.6463  hard_loss=2.4061  kd_loss=0.4804  wikitext2_ppl=13.5637  bits=2  lr=1.01e-05  grad_norm=2.556
+step 29400/48828  loss=2.7739  hard_loss=2.5414  kd_loss=0.4651  wikitext2_ppl=13.5776  bits=2  lr=9.96e-06  grad_norm=2.900
+step 29600/48828  loss=2.9592  hard_loss=2.7132  kd_loss=0.4920  wikitext2_ppl=13.5409  bits=2  lr=9.85e-06  grad_norm=2.990
+step 29800/48828  loss=2.6222  hard_loss=2.3708  kd_loss=0.5029  wikitext2_ppl=13.5832  bits=2  lr=9.75e-06  grad_norm=2.805
+step 30000/48828  loss=2.9355  hard_loss=2.6742  kd_loss=0.5225  wikitext2_ppl=13.6167  bits=2  lr=9.65e-06  grad_norm=2.770
+    [checkpoint] step 30000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 30200/48828  loss=2.6393  hard_loss=2.3843  kd_loss=0.5100  wikitext2_ppl=13.6165  bits=2  lr=9.55e-06  grad_norm=3.931
+step 30400/48828  loss=2.5453  hard_loss=2.3047  kd_loss=0.4811  wikitext2_ppl=13.6498  bits=2  lr=9.44e-06  grad_norm=2.919
+step 30600/48828  loss=2.9755  hard_loss=2.7482  kd_loss=0.4546  wikitext2_ppl=13.5972  bits=2  lr=9.34e-06  grad_norm=2.850
+step 30800/48828  loss=2.6926  hard_loss=2.4644  kd_loss=0.4564  wikitext2_ppl=13.5785  bits=2  lr=9.24e-06  grad_norm=2.787
+step 31000/48828  loss=2.6543  hard_loss=2.3991  kd_loss=0.5102  wikitext2_ppl=13.9146  bits=2  lr=9.14e-06  grad_norm=3.036
+step 31200/48828  loss=2.8317  hard_loss=2.5520  kd_loss=0.5593  wikitext2_ppl=13.7840  bits=2  lr=9.03e-06  grad_norm=2.996
+step 31400/48828  loss=2.4887  hard_loss=2.2162  kd_loss=0.5450  wikitext2_ppl=13.8615  bits=2  lr=8.93e-06  grad_norm=2.911
+step 31600/48828  loss=2.2760  hard_loss=2.0357  kd_loss=0.4806  wikitext2_ppl=13.9863  bits=2  lr=8.83e-06  grad_norm=2.969
+step 31800/48828  loss=2.6453  hard_loss=2.3823  kd_loss=0.5260  wikitext2_ppl=13.8468  bits=2  lr=8.73e-06  grad_norm=3.090
+step 32000/48828  loss=2.5224  hard_loss=2.2645  kd_loss=0.5158  wikitext2_ppl=13.8799  bits=2  lr=8.62e-06  grad_norm=2.921
+step 32200/48828  loss=2.4342  hard_loss=2.1697  kd_loss=0.5291  wikitext2_ppl=13.8249  bits=2  lr=8.52e-06  grad_norm=2.981
+step 32400/48828  loss=2.7093  hard_loss=2.4773  kd_loss=0.4642  wikitext2_ppl=13.8527  bits=2  lr=8.42e-06  grad_norm=2.798
+    [checkpoint] step 32500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 32600/48828  loss=2.7803  hard_loss=2.5121  kd_loss=0.5364  wikitext2_ppl=13.7989  bits=2  lr=8.32e-06  grad_norm=2.710
+step 32800/48828  loss=2.5481  hard_loss=2.2823  kd_loss=0.5316  wikitext2_ppl=13.8181  bits=2  lr=8.21e-06  grad_norm=2.915
+step 33000/48828  loss=2.7008  hard_loss=2.4571  kd_loss=0.4875  wikitext2_ppl=13.8064  bits=2  lr=8.11e-06  grad_norm=3.101
+step 33200/48828  loss=2.7188  hard_loss=2.4638  kd_loss=0.5100  wikitext2_ppl=13.7892  bits=2  lr=8.01e-06  grad_norm=2.777
+step 33400/48828  loss=2.6616  hard_loss=2.4175  kd_loss=0.4881  wikitext2_ppl=13.7787  bits=2  lr=7.91e-06  grad_norm=2.807
+step 33600/48828  loss=2.6618  hard_loss=2.4041  kd_loss=0.5154  wikitext2_ppl=13.7608  bits=2  lr=7.80e-06  grad_norm=2.869
+step 33800/48828  loss=2.7258  hard_loss=2.4794  kd_loss=0.4926  wikitext2_ppl=13.8265  bits=2  lr=7.70e-06  grad_norm=2.978
+step 34000/48828  loss=2.9264  hard_loss=2.6879  kd_loss=0.4769  wikitext2_ppl=13.7835  bits=2  lr=7.60e-06  grad_norm=3.039
+step 34200/48828  loss=2.6311  hard_loss=2.3857  kd_loss=0.4909  wikitext2_ppl=13.7903  bits=2  lr=7.50e-06  grad_norm=2.617
+step 34400/48828  loss=3.1199  hard_loss=2.8732  kd_loss=0.4933  wikitext2_ppl=13.7929  bits=2  lr=7.39e-06  grad_norm=2.840
+step 34600/48828  loss=2.7629  hard_loss=2.5171  kd_loss=0.4916  wikitext2_ppl=13.6281  bits=2  lr=7.29e-06  grad_norm=3.338
+step 34800/48828  loss=2.8539  hard_loss=2.5841  kd_loss=0.5395  wikitext2_ppl=14.1208  bits=2  lr=7.19e-06  grad_norm=2.870
+step 35000/48828  loss=2.7044  hard_loss=2.4463  kd_loss=0.5162  wikitext2_ppl=14.0858  bits=2  lr=7.09e-06  grad_norm=2.668
+    [checkpoint] step 35000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 35200/48828  loss=2.8756  hard_loss=2.6173  kd_loss=0.5165  wikitext2_ppl=13.9354  bits=2  lr=6.98e-06  grad_norm=2.595
+step 35400/48828  loss=2.6337  hard_loss=2.3695  kd_loss=0.5285  wikitext2_ppl=13.9602  bits=2  lr=6.88e-06  grad_norm=3.308
+step 35600/48828  loss=2.5904  hard_loss=2.3409  kd_loss=0.4990  wikitext2_ppl=13.9285  bits=2  lr=6.78e-06  grad_norm=2.799
+step 35800/48828  loss=2.6401  hard_loss=2.3838  kd_loss=0.5126  wikitext2_ppl=13.9751  bits=2  lr=6.68e-06  grad_norm=2.720
+step 36000/48828  loss=2.6972  hard_loss=2.4386  kd_loss=0.5173  wikitext2_ppl=14.0143  bits=2  lr=6.57e-06  grad_norm=2.761
+step 36200/48828  loss=2.6305  hard_loss=2.3875  kd_loss=0.4859  wikitext2_ppl=13.9959  bits=2  lr=6.47e-06  grad_norm=2.764
+step 36400/48828  loss=2.6007  hard_loss=2.3479  kd_loss=0.5054  wikitext2_ppl=13.9423  bits=2  lr=6.37e-06  grad_norm=3.351
+step 36600/48828  loss=2.3620  hard_loss=2.0997  kd_loss=0.5246  wikitext2_ppl=13.9218  bits=2  lr=6.27e-06  grad_norm=3.425
+step 36800/48828  loss=2.4564  hard_loss=2.2098  kd_loss=0.4932  wikitext2_ppl=13.9715  bits=2  lr=6.16e-06  grad_norm=3.239
+step 37000/48828  loss=2.5927  hard_loss=2.3458  kd_loss=0.4938  wikitext2_ppl=14.0248  bits=2  lr=6.06e-06  grad_norm=2.864
+step 37200/48828  loss=2.7606  hard_loss=2.5014  kd_loss=0.5185  wikitext2_ppl=14.0165  bits=2  lr=5.96e-06  grad_norm=3.053
+step 37400/48828  loss=2.5450  hard_loss=2.2895  kd_loss=0.5110  wikitext2_ppl=13.8329  bits=2  lr=5.86e-06  grad_norm=2.917
+    [checkpoint] step 37500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 37600/48828  loss=2.3449  hard_loss=2.1063  kd_loss=0.4772  wikitext2_ppl=13.9050  bits=2  lr=5.75e-06  grad_norm=3.153
+step 37800/48828  loss=2.3412  hard_loss=2.0893  kd_loss=0.5037  wikitext2_ppl=13.8915  bits=2  lr=5.65e-06  grad_norm=2.720
+step 38000/48828  loss=2.4798  hard_loss=2.2201  kd_loss=0.5193  wikitext2_ppl=13.9379  bits=2  lr=5.55e-06  grad_norm=2.723
+step 38200/48828  loss=2.4360  hard_loss=2.1721  kd_loss=0.5278  wikitext2_ppl=13.9598  bits=2  lr=5.45e-06  grad_norm=2.650
+step 38400/48828  loss=2.8278  hard_loss=2.5817  kd_loss=0.4920  wikitext2_ppl=13.9790  bits=2  lr=5.34e-06  grad_norm=2.888
+step 38600/48828  loss=2.4359  hard_loss=2.1683  kd_loss=0.5352  wikitext2_ppl=14.1457  bits=2  lr=5.24e-06  grad_norm=2.750
+step 38800/48828  loss=2.4879  hard_loss=2.2138  kd_loss=0.5482  wikitext2_ppl=14.2018  bits=2  lr=5.14e-06  grad_norm=2.868
+step 39000/48828  loss=2.7800  hard_loss=2.5183  kd_loss=0.5234  wikitext2_ppl=14.1052  bits=2  lr=5.04e-06  grad_norm=3.482
+step 39200/48828  loss=2.5311  hard_loss=2.2573  kd_loss=0.5475  wikitext2_ppl=14.1206  bits=2  lr=4.93e-06  grad_norm=3.018
+step 39400/48828  loss=2.5293  hard_loss=2.2790  kd_loss=0.5006  wikitext2_ppl=14.1500  bits=2  lr=4.83e-06  grad_norm=3.124
+step 39600/48828  loss=2.4207  hard_loss=2.1545  kd_loss=0.5325  wikitext2_ppl=14.1686  bits=2  lr=4.73e-06  grad_norm=2.848
+step 39800/48828  loss=2.6337  hard_loss=2.3433  kd_loss=0.5809  wikitext2_ppl=14.2124  bits=2  lr=4.63e-06  grad_norm=2.553
+step 40000/48828  loss=2.4298  hard_loss=2.1796  kd_loss=0.5006  wikitext2_ppl=14.0830  bits=2  lr=4.52e-06  grad_norm=3.096
+    [checkpoint] step 40000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 40200/48828  loss=2.6574  hard_loss=2.3920  kd_loss=0.5306  wikitext2_ppl=14.1265  bits=2  lr=4.42e-06  grad_norm=2.928
+step 40400/48828  loss=2.6117  hard_loss=2.3514  kd_loss=0.5207  wikitext2_ppl=14.1135  bits=2  lr=4.32e-06  grad_norm=2.861
+step 40600/48828  loss=2.5869  hard_loss=2.2999  kd_loss=0.5741  wikitext2_ppl=14.0585  bits=2  lr=4.22e-06  grad_norm=3.496
+step 40800/48828  loss=2.6030  hard_loss=2.3454  kd_loss=0.5153  wikitext2_ppl=14.0380  bits=2  lr=4.11e-06  grad_norm=3.235
+step 41000/48828  loss=2.6607  hard_loss=2.4026  kd_loss=0.5162  wikitext2_ppl=14.0773  bits=2  lr=4.01e-06  grad_norm=2.684
+step 41200/48828  loss=2.7194  hard_loss=2.4562  kd_loss=0.5265  wikitext2_ppl=14.0188  bits=2  lr=3.91e-06  grad_norm=2.818
+step 41400/48828  loss=2.4951  hard_loss=2.2393  kd_loss=0.5117  wikitext2_ppl=13.9390  bits=2  lr=3.81e-06  grad_norm=2.984
+step 41600/48828  loss=2.5572  hard_loss=2.2968  kd_loss=0.5207  wikitext2_ppl=14.0831  bits=2  lr=3.70e-06  grad_norm=2.807
+step 41800/48828  loss=2.6743  hard_loss=2.3991  kd_loss=0.5504  wikitext2_ppl=14.0711  bits=2  lr=3.60e-06  grad_norm=2.921
+step 42000/48828  loss=2.7061  hard_loss=2.4473  kd_loss=0.5177  wikitext2_ppl=14.0998  bits=2  lr=3.50e-06  grad_norm=3.020
+step 42200/48828  loss=2.5681  hard_loss=2.2900  kd_loss=0.5563  wikitext2_ppl=13.9754  bits=2  lr=3.40e-06  grad_norm=2.964
+step 42400/48828  loss=2.6573  hard_loss=2.3868  kd_loss=0.5411  wikitext2_ppl=14.0491  bits=2  lr=3.29e-06  grad_norm=2.662
+    [checkpoint] step 42500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 42600/48828  loss=2.4861  hard_loss=2.2081  kd_loss=0.5560  wikitext2_ppl=14.2486  bits=2  lr=3.19e-06  grad_norm=3.417
+step 42800/48828  loss=2.3583  hard_loss=2.0784  kd_loss=0.5599  wikitext2_ppl=14.2839  bits=2  lr=3.09e-06  grad_norm=3.227
+step 43000/48828  loss=2.4928  hard_loss=2.2333  kd_loss=0.5190  wikitext2_ppl=14.0967  bits=2  lr=2.99e-06  grad_norm=2.847
+step 43200/48828  loss=2.5439  hard_loss=2.2692  kd_loss=0.5493  wikitext2_ppl=14.1597  bits=2  lr=2.88e-06  grad_norm=2.795
+step 43400/48828  loss=2.3631  hard_loss=2.0780  kd_loss=0.5703  wikitext2_ppl=14.2300  bits=2  lr=2.78e-06  grad_norm=3.204
+step 43600/48828  loss=2.9897  hard_loss=2.7211  kd_loss=0.5373  wikitext2_ppl=14.3118  bits=2  lr=2.68e-06  grad_norm=2.995
+step 43800/48828  loss=2.4325  hard_loss=2.1539  kd_loss=0.5571  wikitext2_ppl=14.1746  bits=2  lr=2.58e-06  grad_norm=3.078
+step 44000/48828  loss=2.5882  hard_loss=2.3253  kd_loss=0.5258  wikitext2_ppl=14.2671  bits=2  lr=2.47e-06  grad_norm=2.754
+step 44200/48828  loss=2.6625  hard_loss=2.3786  kd_loss=0.5678  wikitext2_ppl=14.2803  bits=2  lr=2.37e-06  grad_norm=2.877
+step 44400/48828  loss=2.2873  hard_loss=2.0219  kd_loss=0.5308  wikitext2_ppl=14.3027  bits=2  lr=2.27e-06  grad_norm=3.220
+step 44600/48828  loss=2.5720  hard_loss=2.2964  kd_loss=0.5512  wikitext2_ppl=14.2366  bits=2  lr=2.17e-06  grad_norm=2.957
+step 44800/48828  loss=2.5465  hard_loss=2.2808  kd_loss=0.5314  wikitext2_ppl=14.2855  bits=2  lr=2.06e-06  grad_norm=2.827
+step 45000/48828  loss=2.6930  hard_loss=2.4232  kd_loss=0.5396  wikitext2_ppl=14.1629  bits=2  lr=1.96e-06  grad_norm=2.661
+    [checkpoint] step 45000: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 45200/48828  loss=2.4796  hard_loss=2.2062  kd_loss=0.5468  wikitext2_ppl=14.2049  bits=2  lr=1.86e-06  grad_norm=2.820
+step 45400/48828  loss=2.6611  hard_loss=2.3922  kd_loss=0.5378  wikitext2_ppl=14.2649  bits=2  lr=1.76e-06  grad_norm=2.965
+step 45600/48828  loss=2.4030  hard_loss=2.1345  kd_loss=0.5370  wikitext2_ppl=14.1789  bits=2  lr=1.65e-06  grad_norm=3.108
+step 45800/48828  loss=2.4500  hard_loss=2.1794  kd_loss=0.5413  wikitext2_ppl=14.1423  bits=2  lr=1.55e-06  grad_norm=3.134
+step 46000/48828  loss=2.4584  hard_loss=2.1880  kd_loss=0.5408  wikitext2_ppl=14.1884  bits=2  lr=1.45e-06  grad_norm=3.095
+step 46200/48828  loss=2.4253  hard_loss=2.1520  kd_loss=0.5465  wikitext2_ppl=14.1753  bits=2  lr=1.35e-06  grad_norm=2.812
+step 46400/48828  loss=2.5975  hard_loss=2.3229  kd_loss=0.5493  wikitext2_ppl=14.3361  bits=2  lr=1.24e-06  grad_norm=3.239
+step 46600/48828  loss=2.6647  hard_loss=2.3653  kd_loss=0.5987  wikitext2_ppl=14.3325  bits=2  lr=1.14e-06  grad_norm=2.843
+step 46800/48828  loss=2.4471  hard_loss=2.1696  kd_loss=0.5550  wikitext2_ppl=14.3956  bits=2  lr=1.04e-06  grad_norm=2.785
+step 47000/48828  loss=2.3551  hard_loss=2.0714  kd_loss=0.5673  wikitext2_ppl=14.3280  bits=2  lr=9.37e-07  grad_norm=2.811
+step 47200/48828  loss=2.4650  hard_loss=2.1917  kd_loss=0.5466  wikitext2_ppl=14.3533  bits=2  lr=8.34e-07  grad_norm=3.057
+step 47400/48828  loss=2.7967  hard_loss=2.5145  kd_loss=0.5645  wikitext2_ppl=14.3933  bits=2  lr=7.32e-07  grad_norm=2.518
+    [checkpoint] step 47500: safety-net weights saved to models/qwen3-0.6b-qat-fineweb-hf-partial
+step 47600/48828  loss=2.4415  hard_loss=2.1859  kd_loss=0.5112  wikitext2_ppl=14.3979  bits=2  lr=6.29e-07  grad_norm=2.843
+step 47800/48828  loss=2.5417  hard_loss=2.2663  kd_loss=0.5509  wikitext2_ppl=14.3481  bits=2  lr=5.27e-07  grad_norm=2.853
+step 48000/48828  loss=2.4492  hard_loss=2.1671  kd_loss=0.5642  wikitext2_ppl=14.2762  bits=2  lr=4.24e-07  grad_norm=2.807
+step 48200/48828  loss=2.5208  hard_loss=2.2439  kd_loss=0.5537  wikitext2_ppl=14.2252  bits=2  lr=3.22e-07  grad_norm=3.223
+step 48400/48828  loss=2.5263  hard_loss=2.2462  kd_loss=0.5603  wikitext2_ppl=14.3307  bits=2  lr=2.19e-07  grad_norm=2.895
+step 48600/48828  loss=2.5008  hard_loss=2.2205  kd_loss=0.5606  wikitext2_ppl=14.3820  bits=2  lr=1.17e-07  grad_norm=2.896
+step 48800/48828  loss=2.4907  hard_loss=2.1858  kd_loss=0.6097  wikitext2_ppl=14.2956  bits=2  lr=1.44e-08  grad_norm=2.838
+step 48828/48828  loss=2.8024  hard_loss=2.5177  kd_loss=0.5695  wikitext2_ppl=14.2966  bits=2  lr=0.00e+00  grad_norm=2.701
+==> Materializing fake-quantized weights (2-bit) into plain Linear layers for export
+==> Saving HF checkpoint to models/qwen3-0.6b-qat-fineweb-hf
+==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
+
+---------------- GGUF export + llama-perplexity (post-hoc, both eval sets) ----------------
+final checkpoint (step 48828):    wikitext2 ppl 18.4863 +/- 0.15120   c4 ppl 32.2462 +/- 0.28366
+step 47500 checkpoint (safety-net, closest survivor to the step ~19200 training-time-proxy trough -- step 20000 was unrecoverable, see 'Fix safety-net checkpoint overwrite' commit):
+                                   wikitext2 ppl 18.6311 +/- 0.15310   c4 ppl 32.4342 +/- 0.28589
+Both crush the prior best (wikitext2 26.9519, c4 55.9509); final vs step47500 are statistically
+indistinguishable (overlapping stderr) -- promote the final checkpoint. Full analysis in
+results/wikitext2_perplexity.json and results/c4_perplexity.json (batch24_fineweb_scaleup).
