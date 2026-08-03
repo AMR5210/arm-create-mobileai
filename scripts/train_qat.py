@@ -263,7 +263,12 @@ def main() -> None:
         help="Every N steps, saves a non-destructive safety-net checkpoint "
         "(weights only, no optimizer state) to --checkpoint-dir, so an "
         "interrupted session (e.g. a Colab disconnect) doesn't lose all "
-        "training progress. Set to 0 to disable.",
+        "training progress. Each save gets its own "
+        "pytorch_model_step<N>.bin (previous steps are never overwritten, so "
+        "a later drift in a monitored metric doesn't strand you with only "
+        "the final, possibly-worse weights); --checkpoint-dir's "
+        "pytorch_model.bin is kept as a symlink to the latest one for tools "
+        "that expect that exact filename. Set to 0 to disable.",
     )
     parser.add_argument(
         "--checkpoint-dir",
@@ -674,8 +679,18 @@ def main() -> None:
 
             if args.save_every and step % args.save_every == 0:
                 state_dict = fake_quantized_state_dict(accelerator.unwrap_model(model))
-                torch.save(state_dict, checkpoint_dir / "pytorch_model.bin")
-                print(f"    [checkpoint] step {step}: safety-net weights saved to {checkpoint_dir}")
+                ckpt_path = checkpoint_dir / f"pytorch_model_step{step}.bin"
+                torch.save(state_dict, ckpt_path)
+                # Keep a stable pytorch_model.bin pointing at the latest save,
+                # for tools (e.g. AutoModelForCausalLM.from_pretrained, the
+                # GGUF exporter) that expect that exact filename -- a relative
+                # symlink so it still resolves if checkpoint_dir is copied
+                # elsewhere. The per-step file above is what actually
+                # preserves history; this is just a convenience alias.
+                latest_path = checkpoint_dir / "pytorch_model.bin"
+                latest_path.unlink(missing_ok=True)
+                latest_path.symlink_to(ckpt_path.name)
+                print(f"    [checkpoint] step {step}: safety-net weights saved to {ckpt_path}")
 
             if step >= args.max_steps:
                 done = True
