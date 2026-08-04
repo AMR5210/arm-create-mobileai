@@ -1,0 +1,87 @@
+{
+  "_comment": [
+    "Expected signatures for the three benchmark models, checked by",
+    "scripts/verify_model_signatures.py.",
+    "A GGUF's filename does not establish its identity: two exports of the same",
+    "model can share a name and approximate size while differing in skip-layer",
+    "selection or quantization recipe. Verifying size, tensor mix, skip-layer set",
+    "and sha256 against these signatures makes the identity explicit before any",
+    "measurement is attributed to a checkpoint.",
+    "sha256 is authoritative where given; tensor_mix additionally catches a",
+    "re-export that changes content while preserving the size."
+  ],
+  "models": {
+    "baseline-fp16": {
+      "path": "models/qwen3-0.6b-fp16.gguf",
+      "size_bytes": 1509347648,
+      "sha256": "4d8b9bdc9fcf2feeafc24aad573485a9258dc3cf239ddc0a13e4ef2de9ece4b0",
+      "n_tensors": 311,
+      "tensor_mix": {
+        "F16": 198,
+        "F32": 113
+      },
+      "token_embd_type": "F16",
+      "output_weight_present": true,
+      "provenance": "Local convert_to_gguf.sh from models/qwen3-0.6b-hf (HF Qwen/Qwen3-0.6B), 2026-07-31",
+      "recorded_run": "fp16_raw (WikiText-2 ppl 21.3708)",
+      "notes": "output.weight is a byte-identical duplicate of token_embd.weight: Qwen3-0.6B sets tie_word_embeddings=true, but convert_hf_to_gguf.py materializes the tensor regardless. This adds 311.2 MB to the baseline's disk and RAM figures."
+    },
+    "ptq-2bit": {
+      "path": "models/qwen3-0.6b-ptq-q2_k.gguf",
+      "size_bytes": 479777024,
+      "sha256": "31edf956a842de21d844e9c2e0f873041a9b43fd23d1350cbbce8d9925d43982",
+      "n_tensors": 310,
+      "tensor_mix": {
+        "F16": 1,
+        "F32": 113,
+        "Q2_K": 112,
+        "Q3_K": 84
+      },
+      "token_embd_type": "F16",
+      "output_weight_present": false,
+      "provenance": "Generated locally by scripts/quantize_ptq.sh, 2026-08-04. NOT downloaded.",
+      "recorded_run": "ptq_q2k (WikiText-2 220.9314 +/- 2.34, C4 279.2992 +/- 2.95)",
+      "notes": "Baseline quantized with F16 tied embeddings matching the QAT export, so that no embedding-precision advantage is attributed to QAT training. Both 2-bit variants are 310 tensors / 0.5960 B elements with identical tensor names. Superseded build (347288896 bytes, untied, Q2_K embeddings) measured WikiText-2 275.89 / C4 361.61; those figures do not apply to this file. Current values are recorded in results/."
+    },
+    "qat-2bit": {
+      "path": "models/qwen3-0.6b-qat-q2_k.gguf",
+      "size_bytes": 495193952,
+      "sha256": "a861b8924a2b1881720d38123ec32aae7f99ac05732d819644a6584f3cc38fef",
+      "n_tensors": 310,
+      "tensor_mix": {
+        "F16": 10,
+        "F32": 113,
+        "Q2_K": 187
+      },
+      "token_embd_type": "F16",
+      "output_weight_present": false,
+      "skip_layers": [
+        "blk.2.ffn_down.weight",
+        "blk.8.attn_k.weight",
+        "blk.16.attn_k.weight",
+        "blk.21.attn_k.weight",
+        "blk.26.ffn_gate.weight",
+        "blk.26.ffn_up.weight",
+        "blk.27.attn_k.weight",
+        "blk.27.ffn_gate.weight",
+        "blk.27.ffn_up.weight"
+      ],
+      "provenance": "HF AMR5210/qwen3-0.6b-qat-q2k, fineweb-blend/qwen3-0.6b-qat-fineweb-blend-q2_k.gguf, downloaded 2026-08-04. HF blob sha matched local sha256.",
+      "recorded_run": "qat_q2k_fineweb_final (WikiText-2 ppl 18.4863 +/- 0.1512, C4 32.25 +/- 0.28), step 48828",
+      "notes": "Final FineWeb-blend checkpoint (step 48828), the current best on both eval sets. An earlier 12-skip-layer export (510971712 bytes) is superseded; it carried three additional skip-layers (blk.18.ffn_gate, blk.6.ffn_down, blk.8.ffn_gate) and corresponds to no recorded run."
+    }
+  },
+  "parity": {
+    "_comment": "Claim B requires the two 2-bit variants to differ only in training, so these structural properties are checked as a pair.",
+    "between": [
+      "ptq-2bit",
+      "qat-2bit"
+    ],
+    "n_tensors": 310,
+    "n_elements": 596049920,
+    "identical_tensor_names": true,
+    "both_tied": true,
+    "shared_token_embd_type": "F16",
+    "known_divergence": "Confined to the transformer body and bidirectional: PTQ holds 83 tensors at higher precision (Q3_K vs Q2_K), QAT holds 9 (F16 skip-layers). Body excluding the shared 311.2 MB embedding: PTQ 168.6 MB vs QAT 184.0 MB (+9.1%). Disk 479.8 vs 495.2 MB (+3.2%). Closely matched rather than identical by construction."
+  }
+}

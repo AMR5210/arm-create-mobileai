@@ -1,0 +1,32 @@
+# Xcode build artifacts
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+Packages/
+Package.resolved
+.build/
+
+# The xcframework is a build product of build_llama_xcframework.sh, not source.
+# It is copied here from third_party/llama.cpp/build-apple/ and is ~200 MB.
+Frameworks/
+
+# Model + eval resources are copied in by stage_resources.sh; they are large
+# binaries reproducible from the desktop pipeline, so they stay untracked
+# (mirrors the root .gitignore rules for models/ and eval/data/).
+LlamaBench/Resources/*.gguf
+LlamaBench/Resources/wikitext2_test.txt
+LlamaBench/Resources/instruction_eval.jsonl
+
+# On-device benchmark JSON pulled back off the phone lands in ../results/

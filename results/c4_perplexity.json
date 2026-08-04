@@ -52,12 +52,22 @@
     {
       "id": "ptq_q2k",
       "label": "PTQ Q2_K (llama-quantize on the unmodified base model)",
-      "ppl": 361.6109,
-      "stderr": 3.9318,
+      "ppl": 279.2992,
+      "stderr": 2.95039,
       "gguf": "models/qwen3-0.6b-ptq-q2_k.gguf",
-      "wikitext2_ppl": 275.8938,
-      "ratio_to_fp16_c4": 12.28,
-      "ratio_to_fp16_wikitext2": 12.91
+      "wikitext2_ppl": 220.9314,
+      "ratio_to_fp16_c4": 9.48,
+      "ratio_to_fp16_wikitext2": 10.34,
+      "superseded_value": {
+        "ppl": 361.6109,
+        "stderr": 3.9318,
+        "wikitext2_ppl": 275.8938,
+        "ratio_to_fp16_c4": 12.28,
+        "ratio_to_fp16_wikitext2": 12.91,
+        "reason": "untied build: Q2_K token_embd with a separate Q6_K output.weight"
+      },
+      "remeasured": "2026-08-04",
+      "why_changed": "PTQ involves no training; this reflects a quantization-recipe change. scripts/quantize_ptq.sh now passes --token-embedding-type f16 --output-tensor-type f16 and drops the duplicate output.weight, so the PTQ baseline carries the same F16 tied embedding as the QAT export in place of a Q2_K embedding with a separate Q6_K output head. Both 2-bit variants are now 310 tensors / 0.5960 B elements with identical tensor names, leaving quality as the variable under test. Measured 2026-08-04; the prior value describes the superseded build recorded under superseded_value."
     },
     {
       "id": "qat_q2k_fineweb_final",
@@ -93,12 +103,14 @@
       "implication": "The WikiText-2 headline number overstates this checkpoint's general quality. Quote the C4 ratio alongside it, or the 2-bit cost reads as roughly half what it is off-domain."
     },
     "ptq_is_the_control_that_validates_the_comparison": {
-      "note": "PTQ is never trained, so it has no domain adaptation to inflate its WikiText-2 score. Its degradation ratio is essentially unchanged across the two corpora -- 12.91x on WikiText-2 vs 12.28x on C4.",
-      "why_it_matters": "This rules out the alternative explanation that C4 is simply 'harder' in a way that penalizes low-bit models generally. C4 IS harder in absolute terms (fp16 goes 21.37 -> 29.46), but that difficulty affects the fp16 denominator too. Only the TRAINED models' ratios move, which localizes the effect to their training data rather than to the corpus."
+      "note": "PTQ is never trained, so it has no domain adaptation to inflate its WikiText-2 score. Its degradation ratio is essentially unchanged across the two corpora -- 10.34x on WikiText-2 vs 9.48x on C4. (Updated 2026-08-04 for the embedding-tying fix; was 12.91x / 12.28x. The qualitative point -- near-equal ratios across corpora -- is unaffected.)",
+      "why_it_matters": "This rules out the alternative explanation that C4 is simply 'harder' in a way that penalizes low-bit models generally. C4 IS harder in absolute terms (fp16 goes 21.37 -> 29.46), but that difficulty affects the fp16 denominator too. Only the TRAINED models' ratios move, which localizes the effect to their training data rather than to the corpus.",
+      "_note_before_2026_08_04": "PTQ is never trained, so it has no domain adaptation to inflate its WikiText-2 score. Its degradation ratio is essentially unchanged across the two corpora -- 12.91x on WikiText-2 vs 12.28x on C4."
     },
     "the_core_project_claim_survives": {
-      "note": "QAT still beats PTQ decisively off-domain: 55.95 vs 361.61, a 6.46x gap on C4 (vs 10.24x on WikiText-2).",
-      "verdict": "The central claim -- 2-bit QAT preserves far more quality than 2-bit PTQ at the same bit-width -- holds on a corpus neither model was trained toward. The margin is smaller than WikiText-2 suggests but remains large and unambiguous."
+      "note": "QAT outperforms PTQ substantially off-domain. Against the current best QAT (qat_q2k_fineweb_final): 32.19 vs 279.30 on C4, an 8.68x gap, and 18.46 vs 220.93 on WikiText-2, an 11.97x gap. Updated 2026-08-04, when PTQ was re-measured following the embedding-tying change; the prior note compared the then-current best QAT of 55.95 against PTQ 361.61 for a 6.46x C4 gap.",
+      "verdict": "The central claim -- 2-bit QAT preserves far more quality than 2-bit PTQ at the same bit-width -- holds on a corpus neither model was trained toward. The margin is smaller than WikiText-2 suggests but remains large and unambiguous.",
+      "_note_before_2026_08_04": "QAT still beats PTQ decisively off-domain: 55.95 vs 361.61, a 6.46x gap on C4 (vs 10.24x on WikiText-2)."
     },
     "alpaca_only_model_is_domain_neutral": {
       "note": "The Alpaca-only model barely moves in absolute terms (70.88 WikiText-2 -> 73.03 C4) and actually improves relative to fp16 (3.32x -> 2.48x).",
@@ -110,6 +122,37 @@
       "headline": "C4 improved MORE (in relative terms) than WikiText2 did: C4 -42.4% (55.95 -> 32.25) vs WikiText2 -31.4% (26.95 -> 18.49). Since this run deliberately traded WikiText-2-specific training data (frac 0.5 -> 0.05) for general FineWeb data (frac 0 -> 0.5), a larger C4 gain than WikiText2 gain is exactly the signal that matters here: the improvement is not domain-alignment inflation (that would show up as a WikiText2-skewed gain, the opposite pattern), it is genuine generalization from more diverse training data.",
       "fp16_ceiling_not_yet_run": "The ratio_to_fp16_c4 / ratio_to_fp16_wikitext2 fields on the two new rows are computed against fp16_raw -- the UNMODIFIED base model, never fine-tuned on this run's Alpaca+WikiText2+FineWeb blend. That is not a fair ceiling for a 'does QAT beat/approach fp16' claim, since fp16_raw had no chance to adapt to this data at all while the QAT model trained on it for 48828 steps -- some or all of the apparent closing of the gap (down to 1.09x on C4, and the QAT model literally beating fp16_raw on WikiText2 at 0.87x) could just be a domain-adaptation effect, not evidence about the cost of 2-bit quantization specifically. A fair ceiling (fp16 fine-tuned on the identical blend, same step count) has NOT been run -- decided not to spend further GPU budget on it for now (see project decision log / conversation record). Until that ceiling exists, treat the ratio_to_fp16_* fields as raw data only, not as support for a fp16-comparison claim either way.",
       "fineweb_c4_overlap_validated": "Before trusting this C4 result: checked whether FineWeb (a Common Crawl derivative) and C4 (also Common Crawl derived, built entirely from the CC-MAIN-2019-18 snapshot per the FineWeb paper, arXiv:2406.17557) share content, which would mean the C4 'generalization' gain is partially the same domain-leakage problem the WikiText2/C4 split was designed to catch, just routed through FineWeb. Re-streamed the exact FineWeb slice actually consumed in training (32,236 docs, deterministic -- reproduced identically on a second re-stream) and the exact 613 C4 eval docs. Result: 0 of the 32,236 FineWeb docs came from CC-MAIN-2019-18 (our sample-10BT pull happened to span 8 other dumps, 2013-2022); 0 exact URL matches; 0 documents met FineWeb's own near-duplicate bar (word 5-gram shingle overlap >=75%) against any doc in our FineWeb pull (highest was 53.5% containment, and manual inspection of every match above 10% showed template/boilerplate overlap -- e.g. alumni-directory software templates, generic terms-of-service language -- not shared substantive content). Caveat: this checked the specific slices actually used, not the full FineWeb/C4 corpora -- full FineWeb does structurally contain C4's source snapshot, so a future run that streams a different portion of FineWeb should re-check this."
+    }
+  },
+  "remeasurement_2026_08_04": {
+    "date": "2026-08-04",
+    "what_changed": "PTQ involves no training; this reflects a quantization-recipe change. scripts/quantize_ptq.sh now passes --token-embedding-type f16 --output-tensor-type f16 and drops the duplicate output.weight, so the PTQ baseline carries the same F16 tied embedding as the QAT export in place of a Q2_K embedding with a separate Q6_K output head. Both 2-bit variants are now 310 tensors / 0.5960 B elements with identical tensor names, leaving quality as the variable under test. Measured 2026-08-04; the prior value describes the superseded build recorded under superseded_value.",
+    "harness_note": "Measured with llama.cpp llama-perplexity at commit 000547513 (b10210) on Apple M4; the original rows used commit de699957b on a 20-core CPU box. Corpora, n_ctx=512 and chunk counts are identical. fp16 and the current-best QAT were re-measured unchanged on the new setup as controls and reproduced within their error bars, establishing that the corrected PTQ figures are comparable to the untouched rows.",
+    "controls": {
+      "fp16_wt2": {
+        "remeasured_ppl": 21.3709,
+        "remeasured_stderr": 0.18712,
+        "originally_recorded": 21.3708,
+        "delta": 0.0001
+      },
+      "fp16_c4": {
+        "remeasured_ppl": 29.4554,
+        "remeasured_stderr": 0.26319,
+        "originally_recorded": 29.46,
+        "delta": -0.0046
+      },
+      "qat_wt2": {
+        "remeasured_ppl": 18.4605,
+        "remeasured_stderr": 0.15103,
+        "originally_recorded": 18.4863,
+        "delta": -0.0258
+      },
+      "qat_c4": {
+        "remeasured_ppl": 32.1896,
+        "remeasured_stderr": 0.28326,
+        "originally_recorded": 32.25,
+        "delta": -0.0604
+      }
     }
   }
 }
