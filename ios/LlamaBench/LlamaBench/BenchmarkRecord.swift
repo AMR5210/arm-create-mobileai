@@ -45,6 +45,7 @@ struct BenchmarkRecord: Encodable {
         var throughput_method: String
         var throughput_prompt_samples: [Double]?
         var throughput_gen_samples: [Double]?
+        var throughput_clock_settling_note: String?
 
         var instruction_eval_prompt_format: String
         var instruction_eval_total: Int?

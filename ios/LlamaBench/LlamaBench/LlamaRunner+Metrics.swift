@@ -202,16 +202,24 @@ extension LlamaRunner {
     /// separately so prompt-processing cost does not leak into the generation
     /// figure. Averages are taken over reps, matching llama-bench's `avg_ts`.
     func throughput(nPrompt: Int = 512, nGen: Int = 128, reps: Int = 5,
-                    progress: (@Sendable (Int, Int) -> Void)? = nil) throws -> ThroughputResult {
+                    progress: (@Sendable (Int, Int) -> Void)? = nil,
+                    cacheProbe: (@Sendable (Int, String, Int32) -> Void)? = nil) throws -> ThroughputResult {
         var ppRates: [Double] = []
         var tgRates: [Double] = []
+
+        // Highest occupied position in sequence 0, or -1 when the sequence is
+        // empty. Reported around each clear so the measurement records that every
+        // rep starts from an empty cache rather than reusing the previous one.
+        func seqMaxPos() -> Int32 { llama_memory_seq_pos_max(llama_get_memory(context), 0) }
 
         // llama-bench feeds token id 0 rather than real text; throughput is
         // independent of token identity and this keeps the measurement
         // independent of tokenizer behaviour.
         for rep in 0..<reps {
             // Prompt processing.
+            cacheProbe?(rep, "before clear", seqMaxPos())
             clearMemory()
+            cacheProbe?(rep, "after clear", seqMaxPos())
             var t0 = DispatchTime.now().uptimeNanoseconds
             var remaining = nPrompt
             var pos: Int32 = 0
@@ -228,6 +236,7 @@ extension LlamaRunner {
             }
             llama_synchronize(context)
             var t1 = DispatchTime.now().uptimeNanoseconds
+            cacheProbe?(rep, "after pp", seqMaxPos())
             ppRates.append(Double(nPrompt) / (Double(t1 - t0) / 1e9))
 
             // Generation: one token per decode, as in llama-bench's tg pass.

@@ -30,6 +30,15 @@ results/*
 !results/wikitext2_perplexity.json
 !results/c4_perplexity.json
 
+# ...and the per-variant on-device benchmark records plus the table generated
+# from them. These are the reported submission numbers, each ~3 KB, and each
+# records the SHA-256 of the model file it measured.
+!results/baseline-fp16.json
+!results/ptq-2bit.json
+!results/qat-2bit.json
+!results/summary.md
+!results/summary.csv
+
 # ...except the small eval diagnostics cited in the write-up. Note the
 # re-include of results/logs/ is required first: git will not un-ignore a file
 # whose parent directory is itself excluded by results/*.

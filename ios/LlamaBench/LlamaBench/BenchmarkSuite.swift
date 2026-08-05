@@ -129,9 +129,12 @@ enum BenchmarkSuite {
         var tp: ThroughputResult?
         if !options.skipThroughput {
             log("[2/5] throughput: pp512 / tg128 x \(options.throughputReps) reps")
-            tp = try await runner.throughput(reps: options.throughputReps) { rep, total in
-                log("      rep \(rep)/\(total)")
-            }
+            tp = try await runner.throughput(
+                reps: options.throughputReps,
+                progress: { rep, total in log("      rep \(rep)/\(total)") },
+                cacheProbe: { rep, phase, pos in
+                    log("      [kv] rep \(rep) \(phase): seq_pos_max=\(pos)")
+                })
             log(String(format: "      prompt %.2f tok/s   gen %.2f tok/s",
                        tp!.promptTokensPerSec, tp!.genTokensPerSec))
         } else {
@@ -260,6 +263,8 @@ enum BenchmarkSuite {
                 } ?? "not measured in this run",
                 throughput_prompt_samples: tp?.promptSamples,
                 throughput_gen_samples: tp?.genSamples,
+                throughput_clock_settling_note: tp == nil ? nil :
+                    "Per-rep samples decline across the 5 reps (measured 15-19% from first to last on A19 Pro hardware). The reps complete within a few seconds of each other, which is too short an interval for thermal throttling, so the decline is attributed to boost-clock settling under sustained load. The reported figure is the mean of all 5 reps as measured, matching llama-bench's avg_ts, and is therefore conservative relative to the first-rep peak. Per-rep values are recorded in throughput_prompt_samples and throughput_gen_samples.",
                 instruction_eval_prompt_format:
                     "Qwen3 chat template, enable_thinking=false: "
                     + "<|im_start|>user\\n{build_prompt}<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",

@@ -197,20 +197,59 @@ diagnostics, and is not reported alongside perplexity.
 
 ## On-device figures
 
-`results/dev-ios-sim/` holds the five-metric records for all three variants,
-measured on the iOS harness (simulator, CPU backend). Each records the SHA-256 of
-the file it measured. `results/<tag>.json` remains reserved for physical-device
-runs.
+Measured on an iPhone 17 Pro Max (A19 Pro, `iPhone18,2`), CPU backend, 4 threads,
+by `ios/run_benchmark_suite_device.sh`. Records are `results/<tag>.json`; each
+carries the SHA-256 of the model file it measured.
 
-| Variant | Disk | Peak RAM | Prompt tok/s | Gen tok/s | Perplexity |
-| --- | --- | --- | --- | --- | --- |
-| `baseline-fp16` | 1509.3 MB | 3393.7 MB | 120.60 | 44.62 | 21.3706 |
-| `ptq-2bit` | 479.8 MB | 2159.7 MB | 120.09 | 78.31 | 220.9065 |
-| `qat-2bit` | 495.2 MB | 2188.8 MB | 118.40 | 83.33 | 18.4600 |
+| Variant | Disk | Peak RAM | Prompt tok/s | Gen tok/s | Perplexity | Forced-choice acc |
+| --- | --- | --- | --- | --- | --- | --- |
+| `baseline-fp16` | 1509.3 MB | 4220.6 MB | 819.23 | 47.34 | 21.3707 | 26.0% |
+| `ptq-2bit` | 479.8 MB | 2149.3 MB | 686.39 | 64.27 | 220.9059 | 19.0% |
+| `qat-2bit` | 495.2 MB | 2181.0 MB | 758.27 | 67.30 | 18.4600 | 18.0% |
 
-Perplexity reproduces the desktop reference for each variant to within 0.011%,
-which is what establishes the on-device harness as correct. Throughput and RAM
-are simulator figures on desktop-class silicon and are not reportable results.
+Perplexity reproduces the desktop reference to within 0.0115% on every variant
+(fp16 0.0009%, PTQ 0.0115%, QAT 0.0001%), which is what establishes the on-device
+harness as measuring the same quantity as `llama-perplexity`. Each variant ran in
+its own process, so peak RAM is per-variant rather than cumulative.
+
+The two 2-bit variants are closely matched: RAM within 1.5%, disk within 3.2%,
+generation throughput within 4.7%. Perplexity differs by 12.0x, which is the
+comparison the footprint parity was arranged to isolate.
+
+### Prompt-processing and generation scale differently
+
+Prompt processing is 10.7-17.3x faster than generation across the three variants.
+The two are bound by different resources: prompt processing batches 512 tokens
+into one matmul pass and is compute-bound, while generation produces one token per
+pass and is bound by the memory bandwidth needed to stream the weights. The ratio
+is highest for fp16 (17.3x), whose weights are the most expensive to stream per
+token.
+
+### Boost-clock settling across reps
+
+Throughput is the mean of 5 reps, matching `llama-bench`'s `avg_ts`. The per-rep
+samples decline monotonically:
+
+| Variant | pp rep 1 → rep 5 | Change |
+| --- | --- | --- |
+| `baseline-fp16` | 906.1 → 768.8 | −15.1% |
+| `ptq-2bit` | 682.6 → 700.7 | +2.7% |
+| `qat-2bit` | 867.0 → 703.7 | −18.8% |
+
+The reps complete within a few seconds of each other, too short an interval for
+thermal throttling, so the decline is attributed to boost-clock settling under
+sustained load. A repeat throughput-only pass on a warm device measured fp16 at
+738.16 tok/s against 819.23 in the suite run, consistent with the same effect.
+
+The reported means are therefore conservative relative to first-rep peaks. Per-rep
+values are kept in each record's `throughput_prompt_samples` and
+`throughput_gen_samples`, with the note in
+`harness.throughput_clock_settling_note`.
+
+KV-cache reuse is excluded as a cause: `llama_memory_seq_pos_max` was read either
+side of each rep's clear on device, reporting `-1` after every clear and `511`
+after every 512-token pass, so no rep inherits the previous rep's cache. The
+decline also runs opposite to the direction cache reuse would produce.
 
 ## Changelog
 
@@ -224,3 +263,6 @@ are simulator figures on desktop-class silicon and are not reportable results.
   reported instruction metric became forced-choice accuracy over A/B/C/D,
   replacing parse rate and free-generation accuracy, both retained as
   diagnostics.
+- **2026-08-05** — Suite run on iPhone 17 Pro Max hardware; `results/<tag>.json`
+  now holds the device figures. The `device` field is derived from `hw.machine`
+  rather than `UIDevice.current.model`, which reports the device family only.

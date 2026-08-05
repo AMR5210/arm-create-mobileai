@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 final class BenchState: ObservableObject {
@@ -18,11 +19,41 @@ final class BenchState: ObservableObject {
 
     func clear() { logText = "" }
 
+    /// Holds the screen awake for the duration of a run.
+    ///
+    /// A full pass takes tens of minutes per variant. If the device locks, the app
+    /// stops being frontmost and its work is suspended, which stalls the run and
+    /// distorts the peak-RAM and throughput figures it was measuring. This is a
+    /// safety net independent of the Auto-Lock setting.
+    ///
+    /// Scoped to an active run rather than left on: iOS also clears the flag when
+    /// the app stops being frontmost, and a `willTerminate` observer resets it if
+    /// the app is killed mid-run.
+    private func setIdleTimerDisabled(_ disabled: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = disabled
+        // Read the property back rather than echoing the argument, so the log
+        // records the state UIKit actually holds.
+        log("idle timer disabled: \(UIApplication.shared.isIdleTimerDisabled)")
+    }
+
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil, queue: .main
+        ) { _ in
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
     /// Runs the full five-metric suite for one variant and writes its JSON record.
     func runBenchmark(variant: ModelVariant) async {
         guard !isRunning else { return }
         isRunning = true
-        defer { isRunning = false }
+        setIdleTimerDisabled(true)
+        defer {
+            isRunning = false
+            setIdleTimerDisabled(false)
+        }
 
         let env = ProcessInfo.processInfo.environment
         var opts = BenchmarkSuite.Options()
@@ -59,15 +90,9 @@ final class BenchState: ObservableObject {
         }
     }
 
-    /// Simulator runs must not be mistaken for device runs; the device string is
-    /// what distinguishes them in the results table.
-    static var defaultDeviceLabel: String {
-        #if targetEnvironment(simulator)
-        return "iOS Simulator (desktop host) - DEV ONLY, not a reportable device"
-        #else
-        return UIDevice.current.model
-        #endif
-    }
+    /// See DeviceInfo: the record needs the specific model rather than the device
+    /// family, and a simulator label states that it is not a reportable device.
+    static var defaultDeviceLabel: String { DeviceInfo.recordLabel }
 
     /// Runs without UI interaction when LLAMABENCH_AUTORUN=1.
     ///
@@ -122,7 +147,11 @@ final class BenchState: ObservableObject {
     func runSmokeTest() async {
         guard !isRunning else { return }
         isRunning = true
-        defer { isRunning = false }
+        setIdleTimerDisabled(true)
+        defer {
+            isRunning = false
+            setIdleTimerDisabled(false)
+        }
 
         let backend: Backend = useCPUOnly ? .cpuOnly : .metal(99)
         log("=== smoke test: \(selectedVariant.displayName) ===")
