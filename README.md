@@ -10,8 +10,11 @@ well-documented quality collapse — here it takes WikiText-2 perplexity from 21
 220.9. Quantization-aware training is supposed to recover most of that by letting
 the model adapt to quantization during training rather than having it imposed
 afterwards, but the claim is usually asserted rather than measured end-to-end on the
-hardware that would run it. This project measures it directly: one base model, one
-final on-device format, and the quantization method as the only variable.
+hardware that would run it. This approach follows
+[Apple's published research](docs/METHODOLOGY.md) on 2-bit
+quantization-aware training for on-device models, and other work listed under
+References. This project measures it directly: one base model, one final on-device
+format, and the quantization method as the only variable.
 
 Built for the Arm Create: Mobile AI Challenge (Track 3).
 

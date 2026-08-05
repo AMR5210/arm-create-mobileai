@@ -106,8 +106,8 @@ support for an fp16 comparison in either direction.
 
 ## References
 
-- Apple, "Apple Intelligence Foundation Language Models" — arXiv:2507.13575
-- LLM-QAT (Liu et al., 2023) — data-free QAT distillation
-- EfficientQAT (Chen et al., 2024) — staged optimization QAT
-- BitDistiller — CAKLD objective, used as the distillation loss here
-- ParetoQ — SEQ quantization, evaluated and reported as a tie
+- Apple, "Apple Intelligence Foundation Language Models: Tech Report 2025" — arXiv:2507.13575
+- LLM-QAT (Liu et al., 2023) — data-free QAT distillation — arXiv:2305.17888
+- EfficientQAT (Chen et al., 2024) — staged optimization QAT — arXiv:2407.11062
+- BitDistiller (Du et al., 2024) — CAKLD objective, used as the distillation loss here — arXiv:2402.10631 (ACL 2024)
+- ParetoQ (Liu et al., 2025) — SEQ quantization, evaluated and reported as a tie — arXiv:2502.02631
