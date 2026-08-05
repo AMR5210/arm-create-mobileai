@@ -5,7 +5,7 @@
     "tool": "llama.cpp llama-perplexity",
     "llama_cpp_commit": "de699957b",
     "corpus": "eval/data/wikitext2_test.txt",
-    "corpus_source": "Salesforce/wikitext, wikitext-2-raw-v1, TEST split (scripts/prepare_eval_data.py)",
+    "corpus_source": "Salesforce/wikitext, wikitext-2-raw-v1, test split (scripts/prepare_eval_data.py)",
     "chunks": 583,
     "n_ctx": 512,
     "note": "Every row below marked measured=true used this identical harness and corpus, so the numbers are directly comparable to each other."
@@ -29,7 +29,7 @@
     "warmup_steps": 50,
     "warmup_bits": 4,
     "bit_anneal_steps": 150,
-    "_bit_schedule_note": "warmup_bits/bit_anneal_steps describe the ORIGINAL progressive 4->2 schedule and apply only to rows with bit_schedule='anneal_4_to_2_over_150'. Rows with bit_schedule='fixed_2bit' were run with --warmup-bits 2 --bits 2, which makes scheduled_bits() return the target immediately (no annealing). See analysis.bit_annealing_is_a_noop -- the schedule was measured to make no significant difference.",
+    "_bit_schedule_note": "warmup_bits and bit_anneal_steps describe the progressive 4->2 schedule and apply only to rows with bit_schedule='anneal_4_to_2_over_150'. Rows with bit_schedule='fixed_2bit' were run with --warmup-bits 2 --bits 2, which makes scheduled_bits() return the target immediately. See analysis.bit_annealing_evaluation: the schedule measured no significant difference.",
     "group_size": 16,
     "skip_layers": [
       "layers.16.self_attn.k_proj",
@@ -53,7 +53,7 @@
       "format": "GGUF F16",
       "size_bytes": 1198182240,
       "config": "--wikitext-frac 0.5 --distill-weight 0 --skip-layers self_attn mlp (0 layers wrapped: no quantization)",
-      "role": "FAIR CEILING. The correct comparison point for the QAT runs: same data, same steps, same optimizer, no quantization."
+      "role": "Fair ceiling. The comparison point for the QAT runs: identical data, steps and optimizer, without quantization."
     },
     {
       "id": "fp16_blend_kd05",
@@ -64,7 +64,7 @@
       "format": "GGUF F16",
       "size_bytes": 1198182240,
       "config": "--wikitext-frac 0.5 --distill-weight 0.5 --skip-layers self_attn mlp (0 layers wrapped)",
-      "role": "Literal 'same everything but no quantization'. Worse than kd0 because the teacher is initially identical to the student, so the CAKLD term is a pure anchor toward base that opposes domain adaptation. kd0 is the stronger, fairer ceiling."
+      "role": "Matches the QAT configuration apart from quantization. Scores above kd0 because the teacher is initially identical to the student, making the CAKLD term an anchor toward the base model that opposes domain adaptation. kd0 is the stronger and fairer ceiling."
     },
     {
       "id": "fp16_raw",
@@ -75,7 +75,7 @@
       "format": "GGUF F16",
       "size_bytes": 1509347648,
       "config": "Qwen/Qwen3-0.6B as downloaded",
-      "role": "Unadapted baseline. NOT a fair ceiling for the QAT runs -- it has had no exposure to WikiText-2 train text, so comparing QAT against it overstates quantization quality."
+      "role": "Unadapted baseline. Not a fair ceiling for the QAT runs: it has had no exposure to WikiText-2 train text, so comparing QAT against it overstates quantization quality."
     },
     {
       "id": "qat_q2k_seq_roundtrip",
@@ -88,7 +88,7 @@
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "--quant-function seq --init-mode roundtrip --warmup-bits 2 --bits 2 --wikitext-frac 0.5 --distill-weight 0.5 --group-size 16, 9 skip-layers",
-      "role": "Nominally the best number measured, but NOT a clear win: its CI [26.378, 26.810] overlaps qat_q2k_affine_noanneal's [26.686, 27.124]. Treat as a tie with affine, not an improvement. See analysis.seq_evaluation."
+      "role": "Nominally the lowest perplexity measured, though not a demonstrated improvement: its CI [26.378, 26.810] overlaps qat_q2k_affine_noanneal's [26.686, 27.124]. Treat as a tie with affine. See analysis.seq_evaluation."
     },
     {
       "id": "qat_q2k_blend",
@@ -114,7 +114,7 @@
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "identical to qat_q2k_blend except --warmup-bits 2 (no annealing)",
-      "role": "CONTROL. Isolates the bit-annealing schedule from the SEQ change, which otherwise moved together. Result: annealing is a no-op (see analysis.bit_annealing_is_a_noop), so the SEQ rows differ from affine only by the quant function."
+      "role": "Control run. Isolates the bit-annealing schedule from the SEQ change, which otherwise varied together. Annealing measures as a no-op (see analysis.bit_annealing_evaluation), so the SEQ rows differ from affine only in the quant function."
     },
     {
       "id": "qat_q2k_wasserstein_dw005",
@@ -131,7 +131,7 @@
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "--distill-loss wasserstein --distill-weight 0.05 --sw-weight 0.1 --sw-projections 256 --wasserstein-layers 2 6 8 16 18 21 26 27 --init-mode ptq_q2k --wikitext-frac 0.5 --group-size 16, 9 skip-layers",
-      "role": "Best of the Wasserstein sweep, and scale-matched to CAKLD's loss share. Still loses to CAKLD's 26.9519. See analysis.wasserstein_evaluation."
+      "role": "Best of the Wasserstein sweep, scale-matched to CAKLD's loss share. Scores above CAKLD's 26.9519. See analysis.wasserstein_evaluation."
     },
     {
       "id": "qat_q2k_wasserstein_dw01",
@@ -165,7 +165,7 @@
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "identical to qat_q2k_wasserstein_dw005 except --distill-weight 0.5",
-      "role": "FIRST Wasserstein run, at the same nominal weight CAKLD uses. That match is misleading -- see analysis.wasserstein_evaluation.weight_scale_confound: at 0.5 the Wasserstein term is 69-74% of total loss versus CAKLD's 10-20%, so this run measured a Wasserstein-DOMINATED objective, not a like-for-like swap. Superseded as the fair comparison by the dw=0.05 row."
+      "role": "Initial Wasserstein run, at the same nominal weight CAKLD uses. The nominal match is not a like-for-like swap: at 0.5 the Wasserstein term takes 69-74% of total loss against CAKLD's 10-20%, so this run measured a Wasserstein-dominated objective. See analysis.wasserstein_evaluation.weight_scale_confound. Superseded as the fair comparison by the dw=0.05 row."
     },
     {
       "id": "qat_q2k_seq_ptq_init",
@@ -178,7 +178,7 @@
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193920,
       "config": "identical to qat_q2k_seq_roundtrip except --init-mode ptq_q2k",
-      "role": "ABLATION: SEQ paired with PTQ-dequantized init. Far worse than the same run with roundtrip init (39.67 vs 26.59). SEQ's symmetric no-zero-point grid re-quantizes already-affine-quantized PTQ weights badly: pre-finetune perplexity 1,792,078 vs 79,825 for roundtrip and 16,814 for affine. Do not pair SEQ with ptq_q2k."
+      "role": "Ablation: SEQ paired with PTQ-dequantized init. Scores well above the same run with roundtrip init (39.67 against 26.59). SEQ's symmetric no-zero-point grid re-quantizes already-affine-quantized PTQ weights poorly: pre-finetune perplexity 1,792,078 against 79,825 for roundtrip and 16,814 for affine. Pair SEQ with roundtrip init rather than ptq_q2k."
     },
     {
       "id": "qat_q2k_no_wikitext",
@@ -189,7 +189,7 @@
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "identical to qat_q2k_blend except --wikitext-frac 0",
-      "role": "ABLATION: isolates the WikiText blend. Its training-time proxy perplexity bottomed near step 400 and then rose, i.e. it overfits Alpaca while WikiText degrades."
+      "role": "Ablation: isolates the WikiText blend. Its training-time proxy perplexity bottomed near step 400 and then rose, indicating the model fits Alpaca while WikiText performance declines."
     },
     {
       "id": "ptq_q2k",
@@ -213,7 +213,7 @@
     },
     {
       "id": "prior_cakld_best",
-      "label": "Prior CAKLD best (reference, NOT re-measured here)",
+      "label": "Prior CAKLD best (reference; not re-measured here)",
       "ppl": 104.78,
       "stderr": null,
       "measured": false,
@@ -232,8 +232,8 @@
       "bit_schedule": "anneal_4_to_2_over_150",
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
-      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers (all NOT matching common_training_config -- this run intentionally departs from it; see analysis.batch24_fineweb_scaleup)",
-      "role": "NEW BEST, replacing qat_q2k_blend (26.9519). See analysis.batch24_fineweb_scaleup for the full writeup, including the training-time proxy trough this run's exported number does NOT reflect."
+      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers (this run departs from common_training_config by design; see analysis.batch24_fineweb_scaleup)",
+      "role": "Current best, replacing qat_q2k_blend (26.9519). See analysis.batch24_fineweb_scaleup for the full write-up, including the training-time proxy behaviour that this run's exported number does not reflect."
     },
     {
       "id": "qat_q2k_fineweb_step47500",
@@ -243,10 +243,10 @@
       "measured": true,
       "quant_function": "affine",
       "bit_schedule": "anneal_4_to_2_over_150",
-      "format": "GGUF Q2_K (187 Q2_K / 11 F16 / 113 copied -- one extra F16 tensor vs the final checkpoint's export, an untied embedding/lm_head duplicate from the raw safety-net state dict; cosmetic, does not affect the measured ppl)",
+      "format": "GGUF Q2_K (187 Q2_K / 11 F16 / 113 copied -- one extra F16 tensor relative to the final checkpoint's export, an untied embedding/lm_head duplicate from the safety-net state dict; it does not affect the measured ppl)",
       "size_bytes": 806358816,
-      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers (all NOT matching common_training_config -- this run intentionally departs from it; see analysis.batch24_fineweb_scaleup)",
-      "role": "Statistically indistinguishable from the final checkpoint (overlapping stderr intervals) -- see analysis.batch24_fineweb_scaleup. Kept for the record since it was exported and measured, but the final checkpoint (qat_q2k_fineweb_final) is the one to promote; no real advantage to preferring this one."
+      "config": "--batch-size 24 --lr 2.5e-5 --max-steps 48828 --max-examples 44000 --wikitext-frac 0.05 --fineweb-frac 0.5 --distill-weight 0.5 --distill-loss cakld --init-mode ptq_q2k --group-size 16, 9 skip-layers (this run departs from common_training_config by design; see analysis.batch24_fineweb_scaleup)",
+      "role": "Statistically indistinguishable from the final checkpoint (overlapping stderr intervals); see analysis.batch24_fineweb_scaleup. Retained for the record since it was exported and measured, with qat_q2k_fineweb_final as the checkpoint to promote."
     }
   ],
   "analysis": {
@@ -265,36 +265,36 @@
       "total_factor": 3.89
     },
     "true_cost_of_2bit": {
-      "note": "The honest quantization cost is QAT measured against the fp16 model trained on identical data, not against the unadapted base model.",
+      "note": "The quantization cost is best measured as QAT against the fp16 model trained on identical data, rather than against the unadapted base model.",
       "vs_fair_ceiling_fp16_blend_kd0": "26.9519 / 13.4596 = 2.00x worse",
-      "vs_unadapted_fp16_raw": "26.9519 / 21.3708 = 1.26x worse (MISLEADING -- flattered by the QAT model's domain adaptation)"
+      "vs_unadapted_fp16_raw": "26.9519 / 21.3708 = 1.26x worse (flattered by the QAT model's domain adaptation; not the comparison to quote)"
     },
-    "size_caveat": "The QAT Q2_K file is 495 MB vs PTQ's 347 MB (+43%), because 9 skip-layers and the embeddings stay F16. This is NOT an iso-size comparison, so the README's 'same 2-bit size and speed' framing does not hold for these two artifacts.",
+    "size_caveat": "The QAT Q2_K file is 495.2 MB against PTQ's 479.8 MB (+3.2%), since the QAT export holds 9 skip-layers at F16. Both variants carry the same F16 tied embedding as of 2026-08-04 (see scripts/quantize_ptq.sh), so the two artifacts are closely size-matched. Describing them as identical in size and speed remains an approximation; the skip-layer allocation accounts for the residual difference.",
     "leakage_check": "qat/data.py load_wikitext2_train_examples uses split='train'; the eval corpus is split='test'. No train/eval overlap.",
-    "these_numbers_overstate_generality_see_c4": {
-      "note": "IMPORTANT when quoting anything in this file. The QAT models train on a WikiText-2 TRAIN blend and are scored on WikiText-2 TEST -- no leakage, but the domains match, so these scores partly measure domain alignment. results/c4_perplexity.json re-runs four of these checkpoints on an off-domain C4 slice.",
-      "what_changes": "The blend-vs-Alpaca-only spread collapses from 2.63x here (26.95 vs 70.88) to 1.31x on C4 (55.95 vs 73.03), and the best QAT model goes from 1.26x worse than fp16 here to 1.90x worse on C4. Roughly half the blend's apparent advantage is domain alignment.",
-      "what_holds": "QAT still beats PTQ by 6.46x on C4, so the central 2-bit QAT-vs-PTQ claim survives off-domain."
+    "domain_alignment_caveat": {
+      "note": "Relevant when quoting any figure in this file. The QAT models train on a WikiText-2 train blend and are scored on WikiText-2 test. There is no split leakage, but the domains match, so these scores partly measure domain alignment. results/c4_perplexity.json re-runs four of these checkpoints on an off-domain C4 slice.",
+      "what_changes": "The blend-vs-Alpaca-only spread narrows from 2.63x here (26.95 against 70.88) to 1.31x on C4 (55.95 against 73.03), and the best QAT model moves from 1.26x worse than fp16 here to 1.90x worse on C4. Roughly half the blend's apparent advantage is domain alignment.",
+      "what_holds": "QAT outperforms PTQ by 8.68x on C4, so the central 2-bit QAT-vs-PTQ result holds off-domain."
     },
-    "bit_annealing_is_a_noop": {
-      "note": "CONFIRMED by the qat_q2k_affine_noanneal control run: the progressive 4->2 bit-annealing schedule makes no significant difference at 1000 steps.",
+    "bit_annealing_evaluation": {
+      "note": "The qat_q2k_affine_noanneal control run measured the progressive 4->2 bit-annealing schedule as making no significant difference at 1000 steps.",
       "with_annealing": 26.9519,
       "without_annealing": 26.905,
       "delta": -0.0469,
-      "verdict": "Statistically a no-op. The confidence intervals [26.732, 27.171] and [26.686, 27.124] overlap across almost their entire width, and the gap (0.047) is roughly a fifth of a single run's stderr. Disabling annealing is free. This matters methodologically: the SEQ runs also disable annealing, so without this control their difference from the headline run would have confounded two changes at once.",
+      "verdict": "Statistically a no-op. The confidence intervals [26.732, 27.171] and [26.686, 27.124] overlap across almost their entire width, and the gap (0.047) is roughly a fifth of a single run's stderr, so disabling annealing carries no measured cost. The control also matters methodologically: the SEQ runs disable annealing, so without it their difference from the headline run would have combined two changes.",
       "training_proxy_agrees": "19.7339 annealed vs 19.6353 fixed."
     },
     "seq_evaluation": {
       "note": "ParetoQ SEQ (--quant-function seq) evaluated against affine at matched settings (both fixed 2-bit, so the quant function is the only difference).",
       "seq_roundtrip_init": 26.594,
       "affine_same_settings": 26.905,
-      "verdict": "NOT a demonstrated win. SEQ is nominally 0.31 better, but the CIs overlap ([26.378, 26.810] vs [26.686, 27.124]). Note also that llama-perplexity's stderr is a within-run estimate over chunks; it does not capture seed-to-seed variance between two separate training runs, so the true uncertainty on this comparison is wider than the intervals suggest. Read this as a tie. The paper's claimed 2-bit advantage over LSQ-style quantization is neither reproduced nor refuted here.",
-      "init_sensitivity_is_the_real_finding": "SEQ is extremely sensitive to shadow-weight init: 39.67 with ptq_q2k vs 26.594 with roundtrip, a 1.49x swing from the init mode alone, with everything else identical. An earlier reading of the ptq_q2k number alone suggested 'SEQ is 1.47x worse than affine'; that conclusion was an artifact of the init pairing, not a property of SEQ. ParetoQ initializes from fp weights, which roundtrip approximates and ptq_q2k does not.",
-      "export_penalty_is_not_differential": "SEQ's Q2_K round-trip error on a sampled tensor is higher than affine's (3.03% vs 1.46%), but end-to-end the proxy->GGUF degradation is nearly identical (SEQ 29.85->39.67 = 1.33x; affine 19.64->26.91 = 1.37x). The export path does not penalize SEQ disproportionately."
+      "verdict": "Not a demonstrated improvement. SEQ is nominally 0.31 lower, but the CIs overlap ([26.378, 26.810] against [26.686, 27.124]). llama-perplexity's stderr is also a within-run estimate over chunks and does not capture seed-to-seed variance between two separate training runs, so the true uncertainty on this comparison is wider than the intervals suggest. Read as a tie. The paper's claimed 2-bit advantage over LSQ-style quantization is neither reproduced nor refuted here.",
+      "init_sensitivity": "SEQ is highly sensitive to shadow-weight init: 39.67 with ptq_q2k against 26.594 with roundtrip, a 1.49x swing from the init mode alone with everything else identical. Reading the ptq_q2k number in isolation would attribute that gap to SEQ itself, whereas it is a property of the init pairing. ParetoQ initializes from fp weights, which roundtrip approximates and ptq_q2k does not.",
+      "export_penalty": "SEQ's Q2_K round-trip error on a sampled tensor is higher than affine's (3.03% against 1.46%), but end-to-end the proxy->GGUF degradation is nearly identical (SEQ 29.85->39.67 = 1.33x; affine 19.64->26.91 = 1.37x). The export path does not penalize SEQ disproportionately."
     },
     "wasserstein_evaluation": {
-      "note": "Sliced-Wasserstein + MSE hidden-state block alignment (arXiv:2601.07878, --distill-loss wasserstein) evaluated against CAKLD as the distillation objective. CLOSED: neither the initial run nor the scale-matched sweep beat CAKLD, and no further variations will be run on this project.",
-      "verdict": "CAKLD wins. Best Wasserstein result is 27.4029 (distill-weight 0.05) vs CAKLD's 26.9519. The intervals [27.179, 27.627] and [26.732, 27.171] do not overlap, though only barely -- they are adjacent. So this is a real but small loss, not a rout.",
+      "note": "Sliced-Wasserstein + MSE hidden-state block alignment (arXiv:2601.07878, --distill-loss wasserstein) evaluated against CAKLD as the distillation objective. Concluded: neither the initial run nor the scale-matched sweep improved on CAKLD, and no further variations are planned for this project.",
+      "verdict": "CAKLD is the better objective. The best Wasserstein result is 27.4029 (distill-weight 0.05) against CAKLD's 26.9519. The intervals [27.179, 27.627] and [26.732, 27.171] are adjacent and do not overlap, making this a real but small margin.",
       "sweep": [
         {
           "distill_weight": 0.05,
@@ -315,28 +315,28 @@
           "training_proxy": 21.6378
         }
       ],
-      "monotone_trend": "Quality degrades monotonically as the Wasserstein weight rises (27.40 -> 28.05 -> 30.71). The best tested weight is the smallest one, so within the range tested the term is a net negative at every setting. CAUTION: a distill-weight 0 point was NOT run, so this does not establish that the optimum is at zero -- only that quality is decreasing in weight across the three points measured.",
+      "monotone_trend": "Quality degrades monotonically as the Wasserstein weight rises (27.40 -> 28.05 -> 30.71). The best tested weight is the smallest one, so within the range tested the term is a net negative at every setting. A distill-weight 0 point was not run, so this establishes that quality decreases in weight across the three measured points rather than that the optimum is at zero.",
       "weight_scale_confound": {
-        "why_the_first_run_was_not_a_fair_test": "The first Wasserstein run reused CAKLD's --distill-weight 0.5. That looks like a controlled swap but is not: the Wasserstein term is an unnormalized hidden-state MSE whose natural magnitude (kd_loss ~19-23) is an order of magnitude larger than CAKLD's KL-in-nats (kd_loss ~0.8-1.9). At the same nominal weight it therefore took 69-74% of the total loss where CAKLD takes 10-20% -- roughly a 5x shift in the task/distillation balance. That run measured 'Wasserstein-dominated training vs CAKLD-as-mild-regularizer', not the two objectives head to head.",
-        "how_it_was_resolved": "Re-ran at distill-weight 0.05 and 0.1, which bring the Wasserstein share to 13% and 31% -- 0.05 lands inside CAKLD's 10-20% band. With the scale matched, Wasserstein still loses, so the negative result is not an artifact of the weight.",
-        "generalizable_lesson": "--distill-weight is NOT comparable across --distill-loss choices. Any future distillation objective added to this repo needs its loss share checked against CAKLD's 10-20% before its weight is treated as equivalent."
+        "initial_weight_mismatch": "The first Wasserstein run reused CAKLD's --distill-weight 0.5. This is not a controlled swap: the Wasserstein term is an unnormalized hidden-state MSE whose natural magnitude (kd_loss ~19-23) is an order of magnitude larger than CAKLD's KL-in-nats (kd_loss ~0.8-1.9). At the same nominal weight it took 69-74% of the total loss where CAKLD takes 10-20%, roughly a 5x shift in the task/distillation balance. That run therefore measured Wasserstein-dominated training against CAKLD as a mild regularizer, rather than the two objectives head to head.",
+        "resolution": "Re-ran at distill-weight 0.05 and 0.1, bringing the Wasserstein share to 13% and 31%; 0.05 lands inside CAKLD's 10-20% band. With the scale matched, Wasserstein still scores above CAKLD, so the result is not an artifact of the weight.",
+        "guidance": "--distill-weight is not comparable across --distill-loss choices. Any future distillation objective added to this repo should have its loss share checked against CAKLD's 10-20% before its weight is treated as equivalent."
       },
-      "export_penalty_is_not_differential": "proxy -> GGUF degradation is 1.42x for Wasserstein dw=0.5 and 1.37x for CAKLD, so the export path does not disadvantage Wasserstein; its deficit is already present in training.",
-      "run_health": "All four Wasserstein runs (100-step crash-check plus three 1000-step runs) completed with zero non-finite loss/gradient events and zero skipped updates. kd_loss started well above zero (22.95) and fell monotonically (to 9.14), confirming the student was genuinely quantized and the objective was actually optimizing. Gradient norms at dw=0.5 were high (157 falling to 29, vs ~10-50 for CAKLD), consistent with the loss-scale imbalance; they normalized at the lower weights."
+      "export_penalty": "proxy -> GGUF degradation is 1.42x for Wasserstein dw=0.5 and 1.37x for CAKLD, so the export path does not disadvantage Wasserstein; its deficit is present in training.",
+      "run_health": "All four Wasserstein runs (100-step crash-check plus three 1000-step runs) completed with zero non-finite loss/gradient events and zero skipped updates. kd_loss started well above zero (22.95) and fell monotonically to 9.14, confirming the student was quantized and the objective was optimizing. Gradient norms at dw=0.5 were high (157 falling to 29, against ~10-50 for CAKLD), consistent with the loss-scale imbalance, and normalized at the lower weights."
     },
-    "seq_alpha_positivity_bug": {
-      "note": "Found while verifying SEQ's learnable alpha actually trains. Fixed in commit 6cd451e.",
+    "seq_alpha_positivity": {
+      "note": "Identified while verifying that SEQ's learnable alpha trains. Fixed in commit 6cd451e.",
       "observed": "After 1000 steps, 3 of 26,279,936 alpha scales had gone non-positive (min -3.0e-05). The count did not grow between step 100 and step 1000, and no run produced a NaN.",
-      "why_it_matters": "alpha < 0 silently mirrors a group's quantization grid; alpha == 0 makes the backward's W_Q/alpha term 0/0 = NaN, which the |u| < 1 indicator cannot mask because nan * 0 == nan.",
+      "why_it_matters": "alpha < 0 mirrors a group's quantization grid without raising an error; alpha == 0 makes the backward's W_Q/alpha term 0/0 = NaN, which the |u| < 1 indicator cannot mask because nan * 0 == nan.",
       "fix": "abs().clamp_min(_EPS) on alpha in seq_fake_quant -- an exact identity for every alpha > _EPS, so all measured SEQ results above remain reproducible from the fixed code (verified bit-identical forward for positive alpha).",
-      "alpha_does_train": "All 187 alpha tensors moved; mean relative change 0.14% at 100 steps growing to larger movement by 1000 (largest mover layers.16.mlp.up_proj at 2.02%). Not stuck at init."
+      "alpha_training_behavior": "All 187 alpha tensors moved; mean relative change 0.14% at 100 steps, growing by 1000 steps (largest mover layers.16.mlp.up_proj at 2.02%). Alpha trains rather than remaining at init."
     },
     "batch24_fineweb_scaleup": {
-      "note": "Full-scale run (48828 steps, ~600M tokens, batch 24, lr 2.5e-5) testing whether reducing WikiText-2's share of the training blend (0.5 -> 0.05) and adding general-domain FineWeb data (0.5 share, see qat/data.py module docstring for why FineWeb over RedPajama/SlimPajama) generalizes better than the prior WikiText-heavy recipe -- motivated by the prior recipe's ~119x repetition of the 2.5M-token WikiText-2 train corpus at this token budget being a real memorization risk.",
-      "result": "Both eval sets improved sharply over the prior best (qat_q2k_blend): WikiText2 26.9519 -> 18.4863 (-31.4% relative), C4 55.9509 -> 32.2462 (-42.4% relative). The C4 (held-out, non-domain-matched) improvement is LARGER than the WikiText2 one, which is the result this run was actually testing for: the gain is not just domain-alignment inflation, it reflects genuine generalization improvement from the more diverse data mix.",
-      "training_time_proxy_trough_caveat": "The in-training (truncated, 20k-token) WikiText2 ppl proxy bottomed at step ~19,200 (~13.07) then drifted upward to 14.30 by the final step 48828 -- a real, gradual drift, not noise, plausibly from the ~12-13x repetition of this run's own (much smaller than before, but still finite) data pool late in training. The step-20,000 safety-net checkpoint, which would have let us test whether that trough held up under the REAL llama-perplexity/GGUF measurement, was UNRECOVERABLE: every train_qat.py --save-every checkpoint before this run's fix (see git log, 'Fix safety-net checkpoint overwrite') wrote to the same fixed filename, so each save silently overwrote the last, leaving only the step-47500 save by the time training finished.",
-      "step47500_vs_final_result": "Measured step 47500 anyway (the only other checkpoint that survived) against both eval sets as the closest available substitute: WikiText2 18.6311 +/- 0.1531 and C4 32.4342 +/- 0.2859, both statistically indistinguishable from the final checkpoint's 18.4863 +/- 0.1512 / 32.2462 +/- 0.2837 (overlapping stderr intervals). So on the REAL measurement, the late-training drift visible in the training-time proxy did NOT show up as a meaningful difference between these two nearby (1328-step-apart) points -- both are dramatically better than the prior recipe regardless. Whether the TRUE step-19,200 trough would have measured even better than either is now unknowable for this run; the checkpoint-overwrite bug is fixed for future ones.",
-      "conclusion": "Promote qat_q2k_fineweb_final as the new CURRENT BEST on both WikiText2 and C4, replacing qat_q2k_blend. No real basis to prefer the step-47500 checkpoint over it. NOTE: no 'beats fp16' claim is made anywhere in this result -- see results/c4_perplexity.json's analysis.batch24_fineweb_scaleup.fp16_ceiling_not_yet_run for why, and .fineweb_c4_overlap_validated for the FineWeb/C4 content-overlap check that was run before this result was trusted."
+      "note": "Full-scale run (48828 steps, ~600M tokens, batch 24, lr 2.5e-5) testing whether reducing WikiText-2's share of the training blend (0.5 -> 0.05) and adding general-domain FineWeb data (0.5 share, see qat/data.py module docstring for why FineWeb over RedPajama/SlimPajama) generalizes better than the prior WikiText-heavy recipe Motivated by the prior recipe's ~119x repetition of the 2.5M-token WikiText-2 train corpus at this token budget being a memorization risk.",
+      "result": "Both eval sets improved over the prior best (qat_q2k_blend): WikiText2 26.9519 -> 18.4863 (-31.4% relative), C4 55.9509 -> 32.2462 (-42.4% relative). The C4 (held-out, non-domain-matched) improvement is larger than the WikiText2 one, which is the outcome this run was designed to test: the gain reflects generalization from the more diverse data mix rather than domain-alignment inflation.",
+      "training_time_proxy_note": "The in-training (truncated, 20k-token) WikiText2 ppl proxy bottomed at step ~19,200 (~13.07) then drifted upward to 14.30 by the final step 48828 -- a gradual drift rather than noise, plausibly from the ~12-13x repetition of this run's data pool late in training. The step-20,000 safety-net checkpoint, which would have allowed testing whether that trough held up under the full llama-perplexity/GGUF measurement, was not available: --save-every checkpoints before this run's fix (see git log, 'Fix safety-net checkpoint overwrite') wrote to a fixed filename, so each save replaced the previous one, leaving only the step-47500 save at the end of training.",
+      "step47500_comparison": "Step 47500, the other surviving checkpoint, was measured against both eval sets as the closest available substitute: WikiText2 18.6311 +/- 0.1531 and C4 32.4342 +/- 0.2859, both statistically indistinguishable from the final checkpoint's 18.4863 +/- 0.1512 / 32.2462 +/- 0.2837 (overlapping stderr intervals). On the full measurement, the late-training drift visible in the training-time proxy did not appear as a meaningful difference between these two points 1328 steps apart, and both improve substantially on the prior recipe. Whether the step-19,200 trough would have measured lower than either is not determinable for this run; the checkpoint-overwrite behaviour is fixed for future ones.",
+      "conclusion": "Promote qat_q2k_fineweb_final as the current best on both WikiText2 and C4, replacing qat_q2k_blend. There is no basis to prefer the step-47500 checkpoint over it. No 'beats fp16' claim is made from this result: see results/c4_perplexity.json's analysis.batch24_fineweb_scaleup.fp16_ceiling_status for the reasoning, and .fineweb_c4_overlap for the FineWeb/C4 content-overlap check performed before adopting it."
     }
   },
   "remeasurement_2026_08_04": {

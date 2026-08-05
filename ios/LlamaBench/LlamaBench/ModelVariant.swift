@@ -52,6 +52,32 @@ struct ResourceLocator {
         return URL(fileURLWithPath: p, isDirectory: true)
     }
 
+    /// Eval corpora (wikitext2_test.txt, instruction_eval.jsonl) live alongside
+    /// the models on device but in a separate directory in the repo, so they get
+    /// their own override.
+    static var envEvalDirectory: URL? {
+        guard let p = ProcessInfo.processInfo.environment["LLAMABENCH_EVAL_DIR"],
+              !p.isEmpty else { return nil }
+        return URL(fileURLWithPath: p, isDirectory: true)
+    }
+
+    /// Where on-device results are written. Kept configurable so simulator runs
+    /// do not land in the filenames reserved for device runs.
+    static var outputDirectory: URL {
+        if let p = ProcessInfo.processInfo.environment["LLAMABENCH_OUT_DIR"], !p.isEmpty {
+            return URL(fileURLWithPath: p, isDirectory: true)
+        }
+        return documentsDirectory.appendingPathComponent("results", isDirectory: true)
+    }
+
+    static func locateEval(_ fileName: String) -> URL? {
+        if let env = envEvalDirectory {
+            let c = env.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: c.path) { return c }
+        }
+        return locate(fileName)
+    }
+
     /// All directories searched, in priority order, for diagnostics.
     static var searchPaths: [String] {
         var out: [String] = []

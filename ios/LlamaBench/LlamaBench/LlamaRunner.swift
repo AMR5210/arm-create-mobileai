@@ -94,11 +94,11 @@ enum Backend {
 }
 
 actor LlamaRunner {
-    private var model: OpaquePointer
-    private var context: OpaquePointer
-    private var vocab: OpaquePointer
-    private var batch: llama_batch
-    private let batchCapacity: Int32
+    internal var model: OpaquePointer
+    internal var context: OpaquePointer
+    internal var vocab: OpaquePointer
+    internal var batch: llama_batch
+    internal let batchCapacity: Int32
 
     let modelPath: String
     let backend: Backend
@@ -201,18 +201,27 @@ actor LlamaRunner {
 
     // MARK: - Tokenization
 
-    func tokenize(_ text: String, addSpecial: Bool = true) throws -> [llama_token] {
+    /// - Parameter parseSpecial: when true, control tokens written literally in
+    ///   `text` (`<|im_start|>`, `<think>`, ...) are matched as single special
+    ///   tokens. It must be true for any chat-template-formatted prompt: with it
+    ///   false, `<|im_start|>` tokenizes as the six pieces `<`, `|`, `im`,
+    ///   `_start`, `|`, `>` and the model receives literal text where markup was
+    ///   intended. It stays false for plain corpus text, matching
+    ///   `common_tokenize`'s default, which is what llama-perplexity uses.
+    func tokenize(_ text: String,
+                  addSpecial: Bool = true,
+                  parseSpecial: Bool = false) throws -> [llama_token] {
         let utf8Count = Int32(text.utf8.count)
         // Upper bound: one token per byte, plus room for a BOS.
         var capacity = utf8Count + (addSpecial ? 1 : 0) + 1
         var tokens = [llama_token](repeating: 0, count: Int(capacity))
 
-        var n = llama_tokenize(vocab, text, utf8Count, &tokens, capacity, addSpecial, false)
+        var n = llama_tokenize(vocab, text, utf8Count, &tokens, capacity, addSpecial, parseSpecial)
         if n < 0 {
             // Negative return is the required capacity.
             capacity = -n
             tokens = [llama_token](repeating: 0, count: Int(capacity))
-            n = llama_tokenize(vocab, text, utf8Count, &tokens, capacity, addSpecial, false)
+            n = llama_tokenize(vocab, text, utf8Count, &tokens, capacity, addSpecial, parseSpecial)
             if n < 0 { throw LlamaError.tokenizeFailed(n) }
         }
         return Array(tokens[0..<Int(n)])
@@ -236,9 +245,9 @@ actor LlamaRunner {
         llama_memory_clear(llama_get_memory(context), true)
     }
 
-    private func batchClear() { batch.n_tokens = 0 }
+    internal func batchClear() { batch.n_tokens = 0 }
 
-    private func batchAdd(_ token: llama_token, _ pos: llama_pos, _ wantLogits: Bool) {
+    internal func batchAdd(_ token: llama_token, _ pos: llama_pos, _ wantLogits: Bool) {
         let i = Int(batch.n_tokens)
         batch.token[i]    = token
         batch.pos[i]      = pos
@@ -283,14 +292,16 @@ actor LlamaRunner {
     /// Generates up to `maxTokens` greedily (temperature 0) from `prompt`.
     /// Greedy decoding keeps reported metrics reproducible across runs and
     /// matches the sampling used by the desktop scripts.
-    func generate(prompt: String, maxTokens: Int) throws -> (text: String, tokensGenerated: Int) {
+    func generate(prompt: String, maxTokens: Int,
+                  addSpecial: Bool = true,
+                  parseSpecial: Bool = false) throws -> (text: String, tokensGenerated: Int) {
         clearMemory()
 
         let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
         defer { llama_sampler_free(sampler) }
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
 
-        let promptTokens = try tokenize(prompt, addSpecial: true)
+        let promptTokens = try tokenize(prompt, addSpecial: addSpecial, parseSpecial: parseSpecial)
         var pos = try evaluate(tokens: promptTokens, startPos: 0, logitsForLast: true)
 
         var out = ""

@@ -6,7 +6,7 @@ Measures, for a single GGUF model:
   - peak RAM of the llama-bench run (bytes)
   - prompt-processing and token-generation throughput (tokens/sec), via llama-bench
   - WikiText-2 perplexity, via llama-perplexity
-  - instruction-following accuracy, via scripts/instruction_eval.py
+  - instruction-following forced-choice accuracy, via scripts/instruction_eval.py
 
 Writes one JSON record to results/<tag>.json. The --tag and --device flags exist
 so results from different models and different hardware never get conflated --
@@ -118,9 +118,15 @@ def main() -> None:
         "prompt_tokens_per_sec": speed["prompt_tokens_per_sec"],
         "gen_tokens_per_sec": speed["gen_tokens_per_sec"],
         "perplexity": perplexity,
-        "instruction_accuracy": instruction_result["accuracy"] if instruction_result else None,
-        "instruction_per_subject_accuracy": (
-            instruction_result["per_subject_accuracy"] if instruction_result else None
+        # Forced-choice accuracy over A/B/C/D is the reported instruction metric.
+        # It does not depend on output formatting or generation budget, unlike the
+        # generate-and-parse figures, and chance is a well-defined 25%. See
+        # scripts/instruction_eval.py's module docstring.
+        "instruction_forced_choice_accuracy": (
+            instruction_result["forced_choice_accuracy"] if instruction_result else None
+        ),
+        "instruction_per_subject_forced_choice_accuracy": (
+            instruction_result["per_subject_forced_choice_accuracy"] if instruction_result else None
         ),
         "llama_bench_raw": speed["raw"],
     }
@@ -136,7 +142,7 @@ def main() -> None:
     print(f"  gen tok/s:   {speed['gen_tokens_per_sec']}")
     print(f"  perplexity:  {perplexity}")
     if instruction_result:
-        print(f"  instr. acc:  {instruction_result['accuracy']:.1%}")
+        print(f"  forced-choice acc: {instruction_result['forced_choice_accuracy']:.1%}")
 
 
 if __name__ == "__main__":

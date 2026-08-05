@@ -134,13 +134,83 @@ answer accuracy, is the visible difference between the two.
 The QAT-versus-PTQ gap is the result this comparison establishes. QAT remains
 measurably below fp16 on presentation quality, and the write-up should say so.
 
+## Instruction-following metric
+
+The MMLU-style slice in `eval/data/instruction_eval.jsonl` (100 questions, four
+subjects, four choices) does not separate these variants under any of three
+scoring methods, so perplexity is the reported quality metric.
+
+| Method | fp16 | ptq-2bit | qat-2bit | Chance |
+| --- | --- | --- | --- | --- |
+| Free-generation accuracy | 0.17 | 0.07 | 0.11 | 0.25 |
+| Parse rate | 46% | 22% | 2% | — |
+| **Forced choice over A/B/C/D** | **26%** | **19%** | **18%** | **25%** |
+
+**Free generation** leaves 37–73% of answers without an extractable letter and
+places every variant below chance, including the fp16 baseline
+(`results/logs/instr_eval_diag_summary.json`). The figure therefore reflects the
+extraction step rather than model quality.
+
+**Parse rate** — whether free generation yields a well-formed letter at all —
+separates the variants, but reflects output shape. QAT scores 2% because it opens
+with an `Assistant:` role prefix and restates the instruction rather than
+answering, leaving no letter inside the 8-token budget. A budget sweep on a
+15-question stratified sample shows the size of that effect: QAT moves 6.7% → 20%
+→ 13.3% at 8/32/64 tokens while fp16 holds at 46.7% throughout, and at 64 tokens
+QAT's output turns to repetition rather than reaching an answer. Parse rate also
+orders the variants opposite to perplexity, placing the strongest one last.
+
+**Forced choice** scores the model's preference among exactly the four legal
+answers, independent of output formatting and generation budget. Two
+implementations are used: the iOS harness takes the argmax over the A/B/C/D logits
+at the first generated position, and the desktop script uses a single-token GBNF
+grammar (`root ::= [ABCD]`) with greedy sampling, which admits only those four
+tokens and selects the highest-scoring one. Across all 100 questions on fp16 the
+two agree on **100/100** predictions.
+
+All three variants sit at or below the 25% chance line, with label bias
+dominating the result:
+
+| Variant | Prediction histogram | Accuracy |
+| --- | --- | --- |
+| fp16 | A 77, B 11, C 3, D 9 | 26% |
+| ptq-2bit | A 73, B 1, D 26 | 19% |
+| qat-2bit | **A 100** | 18% |
+
+Gold answers are distributed A 18 / B 28 / C 30 / D 24, so a constant "A" response
+scores 18%. `qat-2bit` selects A for all 100 questions and scores exactly that,
+indicating no discrimination between choices. fp16's 26% is within noise of chance
+alongside a 77% A-bias.
+
+At this model size the slice carries no information about variant quality however
+the answer is extracted. Forced-choice accuracy is recorded in each result file
+for completeness, with parse rate and free-generation accuracy retained as
+diagnostics, and is not reported alongside perplexity.
+
 ## Follow-ups
 
 - **QAT verbosity and weak EOS.** Worth confirming the fine-tuning data terminated
   examples with `<|im_end|>`; run-on output across all prompts is consistent with
-  that cause.
+  that cause, as is the `Assistant:` prefix seen on the MCQ prompt.
 - **QAT does not honour `enable_thinking=false`**, emitting a reasoning preamble
   regardless.
+
+## On-device figures
+
+`results/dev-ios-sim/` holds the five-metric records for all three variants,
+measured on the iOS harness (simulator, CPU backend). Each records the SHA-256 of
+the file it measured. `results/<tag>.json` remains reserved for physical-device
+runs.
+
+| Variant | Disk | Peak RAM | Prompt tok/s | Gen tok/s | Perplexity |
+| --- | --- | --- | --- | --- | --- |
+| `baseline-fp16` | 1509.3 MB | 3393.7 MB | 120.60 | 44.62 | 21.3706 |
+| `ptq-2bit` | 479.8 MB | 2159.7 MB | 120.09 | 78.31 | 220.9065 |
+| `qat-2bit` | 495.2 MB | 2188.8 MB | 118.40 | 83.33 | 18.4600 |
+
+Perplexity reproduces the desktop reference for each variant to within 0.011%,
+which is what establishes the on-device harness as correct. Throughput and RAM
+are simulator figures on desktop-class silicon and are not reportable results.
 
 ## Changelog
 
@@ -150,3 +220,7 @@ measurably below fp16 on presentation quality, and the write-up should say so.
   the QAT export, and perplexity re-measured (WikiText-2 275.89 → 220.93, C4
   361.61 → 279.30). The change is a quantization-recipe fix; PTQ involves no
   training.
+- **2026-08-05** — Five-metric on-device suite run for all three variants. The
+  reported instruction metric became forced-choice accuracy over A/B/C/D,
+  replacing parse rate and free-generation accuracy, both retained as
+  diagnostics.

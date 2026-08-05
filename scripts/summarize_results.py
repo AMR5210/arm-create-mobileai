@@ -16,7 +16,7 @@ COLUMNS = [
     ("prompt_tokens_per_sec", "Prompt tok/s"),
     ("gen_tokens_per_sec", "Gen tok/s"),
     ("perplexity", "Perplexity"),
-    ("instruction_accuracy", "Instruction acc."),
+    ("instruction_forced_choice_accuracy", "Instr. acc. (forced)"),
 ]
 
 
@@ -24,6 +24,11 @@ def load_records() -> list[dict]:
     rows = []
     for path in sorted(RESULTS_DIR.glob("*.json")):
         data = json.loads(path.read_text())
+        # results/ also holds analysis files that are not per-variant benchmark
+        # records (wikitext2_perplexity.json, c4_perplexity.json). They have no
+        # "tag" key, so skip them rather than raising KeyError on the glob.
+        if "tag" not in data:
+            continue
         rows.append(
             {
                 "tag": data["tag"],
@@ -33,9 +38,9 @@ def load_records() -> list[dict]:
                 "prompt_tokens_per_sec": _fmt(data["prompt_tokens_per_sec"]),
                 "gen_tokens_per_sec": _fmt(data["gen_tokens_per_sec"]),
                 "perplexity": _fmt(data["perplexity"]),
-                "instruction_accuracy": (
-                    f"{data['instruction_accuracy']:.1%}"
-                    if data["instruction_accuracy"] is not None
+                "instruction_forced_choice_accuracy": (
+                    f"{data['instruction_forced_choice_accuracy']:.1%}"
+                    if data.get("instruction_forced_choice_accuracy") is not None
                     else "n/a"
                 ),
             }
