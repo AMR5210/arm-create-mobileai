@@ -5,6 +5,8 @@ import UIKit
 final class BenchState: ObservableObject {
     @Published var logText: String = ""
     @Published var isRunning: Bool = false
+    /// Responses from a headless compare run, kept for match detection at the end.
+    private var compareResponses: [String: String] = [:]
     @Published var selectedVariant: ModelVariant = .ptq2bit
     @Published var useCPUOnly: Bool = true
 
@@ -30,10 +32,9 @@ final class BenchState: ObservableObject {
     /// the app stops being frontmost, and a `willTerminate` observer resets it if
     /// the app is killed mid-run.
     private func setIdleTimerDisabled(_ disabled: Bool) {
-        UIApplication.shared.isIdleTimerDisabled = disabled
-        // Read the property back rather than echoing the argument, so the log
-        // records the state UIKit actually holds.
-        log("idle timer disabled: \(UIApplication.shared.isIdleTimerDisabled)")
+        // ScreenWake returns the state UIKit holds afterwards, so the log records
+        // the effective value rather than the requested one.
+        log("idle timer disabled: \(ScreenWake.setDisabled(disabled))")
     }
 
     init() {
@@ -115,7 +116,46 @@ final class BenchState: ObservableObject {
         log("### autorun (LLAMABENCH_AUTORUN=1)")
         showEnvironment()
 
-        if env["LLAMABENCH_MODE"] == "bench" {
+        if env["LLAMABENCH_MODE"] == "compare" {
+            let prompt = env["LLAMABENCH_PROMPT"] ?? "What is the capital of France? Answer in one sentence."
+            log("### compare: \(prompt.debugDescription)")
+            await PromptComparison.run(
+                prompt: prompt,
+                maxTokens: Int(env["LLAMABENCH_COMPARE_TOKENS"] ?? "") ?? 256,
+                onPhase: { [weak self] v, phase in
+                    Task { @MainActor in
+                        switch phase {
+                        case .loading:             self?.log("  \(v.tag): loading")
+                        case .generating:          self?.log("  \(v.tag): generating")
+                        case .finished:            break
+                        case .failed(let message): self?.log("  \(v.tag): FAILED \(message)")
+                        }
+                    }
+                },
+                onResponse: { [weak self] r in
+                    Task { @MainActor in
+                        let f = ResponseAnalysis.flags(text: r.text, stopReason: r.stopReason)
+                        var tags: [String] = []
+                        if f.repetition {
+                            tags.append("REPETITION(unit=\(f.repeatUnitWords) x\(f.repeatCount))")
+                        }
+                        if f.truncated { tags.append("TRUNCATED") }
+                        self?.log(String(format: "  %@: %.3fB · %.0f MB · %d tok, %.1f tok/s, "
+                                         + "load %.2fs, resident-before %.0f MB, stop=%@ %@",
+                                         r.variant.tag, Double(r.paramCount) / 1e9,
+                                         Double(r.weightsBytes) / 1e6, r.tokens, r.tokensPerSec,
+                                         r.loadSeconds, Double(r.residentBytesBeforeLoad) / 1e6,
+                                         r.stopReason.rawValue, tags.joined(separator: " ")))
+                        self?.log("      \(r.text.debugDescription)")
+                        self?.compareResponses[r.variant.tag] = r.text
+                    }
+                })
+            // Match detection needs every response, so it runs once at the end.
+            let eligible = compareResponses
+            let matched = ResponseAnalysis.matchingTags(eligible)
+            log("  match set: \(matched.isEmpty ? "none" : matched.sorted().joined(separator: ", "))")
+            log("### compare complete")
+        } else if env["LLAMABENCH_MODE"] == "bench" {
             for v in variants {
                 selectedVariant = v
                 await runBenchmark(variant: v)

@@ -75,7 +75,7 @@ enum InstructionEval {
 
     /// Wraps a user turn in Qwen3's chat template with thinking disabled.
     static func applyChatTemplate(_ content: String) -> String {
-        "<|im_start|>user\n\(content)<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        ChatTemplate.qwen3NoThink(content)
     }
 
     /// First standalone A-D letter, matching Python's `\b([ABCD])\b`.

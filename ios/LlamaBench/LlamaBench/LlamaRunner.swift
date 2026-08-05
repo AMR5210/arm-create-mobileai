@@ -198,6 +198,8 @@ actor LlamaRunner {
 
     var contextSize: UInt32 { llama_n_ctx(context) }
     var vocabSize: Int32 { llama_vocab_n_tokens(vocab) }
+    var paramCount: UInt64 { llama_model_n_params(model) }
+    var weightsBytes: UInt64 { llama_model_size(model) }
 
     // MARK: - Tokenization
 
@@ -292,9 +294,22 @@ actor LlamaRunner {
     /// Generates up to `maxTokens` greedily (temperature 0) from `prompt`.
     /// Greedy decoding keeps reported metrics reproducible across runs and
     /// matches the sampling used by the desktop scripts.
-    func generate(prompt: String, maxTokens: Int,
-                  addSpecial: Bool = true,
-                  parseSpecial: Bool = false) throws -> (text: String, tokensGenerated: Int) {
+    /// Why generation stopped. Distinguishes a model that finished its answer from
+    /// one cut off at the cap, which a caller cannot infer from the text alone.
+    enum StopReason: String, Sendable {
+        case endOfSequence
+        case tokenLimit
+    }
+
+    struct Generation: Sendable {
+        var text: String
+        var tokens: Int
+        var stopReason: StopReason
+    }
+
+    func generateDetailed(prompt: String, maxTokens: Int,
+                          addSpecial: Bool = true,
+                          parseSpecial: Bool = false) throws -> Generation {
         clearMemory()
 
         let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
@@ -306,11 +321,15 @@ actor LlamaRunner {
 
         var out = ""
         var produced = 0
+        var stop = StopReason.tokenLimit
         // -1 samples from the logits of the last token in the most recent batch.
         var next = llama_sampler_sample(sampler, context, -1)
 
         while produced < maxTokens {
-            if isEndOfGeneration(next) { break }
+            if isEndOfGeneration(next) {
+                stop = .endOfSequence
+                break
+            }
             out += piece(for: next)
             produced += 1
 
@@ -322,6 +341,15 @@ actor LlamaRunner {
             next = llama_sampler_sample(sampler, context, -1)
         }
         llama_synchronize(context)
-        return (out, produced)
+        return Generation(text: out, tokens: produced, stopReason: stop)
+    }
+
+    /// Tuple-returning form kept for callers that do not need the stop reason.
+    func generate(prompt: String, maxTokens: Int,
+                  addSpecial: Bool = true,
+                  parseSpecial: Bool = false) throws -> (text: String, tokensGenerated: Int) {
+        let g = try generateDetailed(prompt: prompt, maxTokens: maxTokens,
+                                     addSpecial: addSpecial, parseSpecial: parseSpecial)
+        return (g.text, g.tokens)
     }
 }

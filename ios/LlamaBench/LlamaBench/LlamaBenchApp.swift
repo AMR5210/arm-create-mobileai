@@ -4,7 +4,12 @@ import SwiftUI
 struct LlamaBenchApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            TabView {
+                ContentView()
+                    .tabItem { Label("Benchmark", systemImage: "speedometer") }
+                CompareView()
+                    .tabItem { Label("Compare", systemImage: "text.bubble") }
+            }
         }
     }
 }
