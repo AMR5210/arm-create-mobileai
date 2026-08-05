@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Post-training quantization (PTQ) via llama.cpp's built-in quantizer.
 # Produces the "naive 2-bit" baseline used to demonstrate the QAT quality gap
-# (Claim B in docs/PROJECT_PLAN.md: PTQ-2bit vs QAT-2bit, same runtime format,
+# (Claim B in docs/METHODOLOGY.md: PTQ-2bit vs QAT-2bit, same runtime format,
 # quality is the only thing that should differ).
 set -euo pipefail
 
@@ -32,7 +32,7 @@ mkdir -p "$(dirname "$OUT_GGUF")"
 #      QAT model keeps F16 would attribute an embedding-precision advantage to
 #      QAT training. Both variants carry the identical F16 embedding.
 #
-#   2. Footprint parity. Claim B in docs/PROJECT_PLAN.md requires the two 2-bit
+#   2. Footprint parity. Claim B in docs/METHODOLOGY.md requires the two 2-bit
 #      variants to share a footprint so that quality is the variable under test.
 #
 # `--output-tensor-type f16` alone is insufficient. Qwen3-0.6B sets

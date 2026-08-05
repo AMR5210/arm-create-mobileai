@@ -6,7 +6,7 @@ import UIKit
 /// Supplies the `device` string for a result record.
 ///
 /// `UIDevice.current.model` returns the device family ("iPhone") rather than the
-/// specific model, while `docs/IOS_BENCHMARK_HARNESS_SPEC.md` requires the real
+/// specific model, while the record schema in `ios/README.md` calls for the real
 /// model, since that string appears in the published results table. The hardware
 /// identifier from `hw.machine` is specific, so it is used as the source of truth
 /// and mapped to a marketing name.

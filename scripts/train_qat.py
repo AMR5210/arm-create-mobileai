@@ -2,7 +2,7 @@
 """QAT fine-tuning entrypoint.
 
 Wraps the base model's linear layers with fake-quantization (initialized
-from an INT4 rounding, trained toward a 2-bit target -- the plan's
+from an INT4 rounding, trained toward a 2-bit target -- the
 progressive FP16 -> INT4 -> INT2 route), then does a short instruction
 fine-tune on a small Alpaca slice with a straight-through estimator, printing
 WikiText-2 perplexity periodically so the trend can be checked before
@@ -31,11 +31,6 @@ from qat.apply_qat import (  # noqa: E402
 )
 from qat.attn_backend import safe_attn_implementation  # noqa: E402
 from qat.calibrate_clip import calibrate_asymmetric_clipping  # noqa: E402
-from qat.distill_losses import (  # noqa: E402
-    BlockHiddenStateHooks,
-    combined_block_loss,
-    kl_distill_loss,
-)
 from qat.data import (  # noqa: E402
     blend_target_counts,
     build_blended_examples,
@@ -44,6 +39,11 @@ from qat.data import (  # noqa: E402
     load_alpaca_examples,
     load_fineweb_train_examples,
     load_wikitext2_train_examples,
+)
+from qat.distill_losses import (  # noqa: E402
+    BlockHiddenStateHooks,
+    combined_block_loss,
+    kl_distill_loss,
 )
 from qat.eval_utils import compute_perplexity  # noqa: E402
 
@@ -225,7 +225,7 @@ def main() -> None:
         type=int,
         default=4,
         help="Bit-width the forward pass STARTS at, annealed down to --bits "
-        "over --bit-anneal-steps. Progressive quantization (the plan's "
+        "over --bit-anneal-steps. Progressive quantization (the "
         "FP16->INT4->INT2 route): a pretrained model quantized straight to "
         "2 bits perturbs the forward enough to explode gradients through the "
         "network's depth on step 1, before any learning happens. Starting at "

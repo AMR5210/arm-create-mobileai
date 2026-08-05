@@ -15,7 +15,7 @@
 #   nothink  -- chat template, enable_thinking=false (direct answer)
 #
 # Results inform the prompt format used for the "same prompt, three models" demo
-# described in docs/PROJECT_PLAN.md. See docs/GENERATION_QUALITY.md.
+# described in docs/METHODOLOGY.md. See docs/GENERATION_QUALITY.md.
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

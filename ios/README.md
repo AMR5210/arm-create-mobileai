@@ -4,9 +4,9 @@ Runs the three GGUF model variants (fp16 baseline, PTQ 2-bit, QAT 2-bit) on
 Arm-based iOS hardware and reports the same metrics as the desktop harness
 (`scripts/benchmark.py`).
 
-Current scope: framework build, model loading and inference are complete. The
-five-metric benchmark suite (peak RAM sampling, pp/tg throughput, perplexity,
-instruction eval, JSON export) is in progress — see [Status](#status).
+All five metrics are implemented and have been run on an iPhone 17 Pro Max;
+`results/<tag>.json` holds those figures. See
+[Running the full suite](#3-running-the-full-suite) to reproduce.
 
 ## Prerequisites
 
@@ -135,7 +135,7 @@ KleidiAI's `supports_op()` in this llama.cpp revision accepts `GGML_TYPE_Q4_0`,
 among them, so both 2-bit variants run their weight matmuls on stock ggml CPU
 kernels with KleidiAI loaded but not dispatched.
 
-The project plan anticipates this direction ("KleidiAI's public microkernels
+docs/METHODOLOGY.md records this direction ("KleidiAI's public microkernels
 target int4/int8, not int2"). The measured refinement is that the effect on the
 Q2_K path is zero rather than reduced, and the write-up should state that
 directly.
@@ -162,14 +162,13 @@ the prompt is a bare completion prefix rather than the model's chat format, and
 comparison, which uses the Qwen3 chat template.
 
 These are simulator figures on desktop-class silicon, included to demonstrate the
-harness rather than as reportable results. Per the project plan, reported numbers
-come from physical iPhone hardware.
+harness rather than as reportable results. Per docs/METHODOLOGY.md, reported
+numbers come from physical iPhone hardware.
 
 ### Footprint parity between the two 2-bit variants
 
-The project plan's Phase 4 sanity check requires tokens/sec and RAM between
-`ptq-2bit` and `qat-2bit` to be closely matched, so that quality is the variable
-under test.
+Claim B (docs/METHODOLOGY.md) requires tokens/sec and RAM between `ptq-2bit` and
+`qat-2bit` to be closely matched, so that quality is the variable under test.
 
 Parity is established in `scripts/quantize_ptq.sh`: the PTQ baseline is quantized
 with `--token-embedding-type f16 --output-tensor-type f16`, then has its duplicate
@@ -205,24 +204,69 @@ plus `--tensor-type` F16 on the same 9 skip-layer tensors would leave training a
 the only difference between the variants. This lowers PTQ's precision on 83
 tensors, so it is an experiment-design choice rather than a defect to correct.
 
-## Status
+## 3. Running the full suite
 
-Complete:
+```bash
+DEVICE_ID=<devicectl-device-id> ./ios/run_benchmark_suite_device.sh
+```
 
-- [x] llama.cpp cross-compiled for iOS device + simulator with KleidiAI
-      microkernels, confirmed by symbol inspection.
-- [x] Xcode app project, linking and embedding the xcframework.
-- [x] Model loading, tokenization, greedy decode, generation for all three
-      variants.
-- [x] Explicit CPU-vs-Metal backend selection.
-- [x] In-app capture of llama.cpp's log, including KleidiAI dispatch decisions.
-- [x] Headless, env-driven runs for scripting.
+The driver runs one variant per app process, detects completion from the app's
+log, and retrieves each record when the run finishes. `ios/run_benchmark_suite.sh`
+is the simulator equivalent.
 
-Outstanding — the five metrics from `docs/IOS_BENCHMARK_HARNESS_SPEC.md`:
+Inputs are staged into the app's data container before the run, and records are
+pulled back afterwards:
 
-- [ ] Peak RAM sampling (`task_info` / `MACH_TASK_BASIC_INFO`).
-- [ ] pp-512 / tg-128 throughput matching `llama-bench` methodology.
-- [ ] WikiText-2 perplexity (sliding window, `max_length=1024`, `stride=512`).
-- [ ] Instruction-following accuracy against `instruction_eval.jsonl`.
-- [ ] JSON export in `scripts/benchmark.py`'s schema + retrieval off-device.
-- [ ] Runs on physical iPhone hardware (all numbers above are simulator).
+```bash
+# stage a model (repeat for each variant, plus eval/data/*)
+xcrun devicectl device copy to --device "$DEVICE_ID" \
+  --domain-type appDataContainer --domain-identifier org.armcreate.llamabench \
+  --source models/qwen3-0.6b-qat-q2_k.gguf \
+  --destination Documents/qwen3-0.6b-qat-q2_k.gguf
+
+# retrieve a record
+xcrun devicectl device copy from --device "$DEVICE_ID" \
+  --domain-type appDataContainer --domain-identifier org.armcreate.llamabench \
+  --source Documents/results/qat-2bit.json --destination results/qat-2bit.json
+```
+
+`UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` are set, so the
+same files are reachable through Files.app → On My iPhone → LlamaBench if a
+cable-free path is wanted.
+
+### Record schema
+
+One record per variant at `results/<tag>.json`, where `tag` is one of
+`baseline-fp16`, `ptq-2bit`, `qat-2bit` — the filenames
+`scripts/summarize_results.py` reads. The first twelve keys match
+`scripts/benchmark.py`'s `record` dict exactly, including explicit `null`s, so a
+desktop record and a device record have the same shape:
+
+```json
+{
+  "tag": "qat-2bit",
+  "device": "iPhone 17 Pro Max (iPhone18,2)",
+  "model_path": "qwen3-0.6b-qat-q2_k.gguf",
+  "timestamp_utc": "2026-08-05T08:12:30Z",
+  "disk_bytes": 495193952,
+  "peak_ram_bytes": 2181038080,
+  "prompt_tokens_per_sec": 758.27,
+  "gen_tokens_per_sec": 67.30,
+  "perplexity": 18.46,
+  "instruction_forced_choice_accuracy": 0.18,
+  "instruction_per_subject_forced_choice_accuracy": { "...": 0.2 },
+  "llama_bench_raw": null,
+
+  "model_sha256": "a861b892...",
+  "backend": "CPU (Arm/KleidiAI eligible)",
+  "harness": { "perplexity_method": "...", "throughput_clock_settling_note": "..." }
+}
+```
+
+`llama_bench_raw` is a desktop-only field and is always `null` on device.
+`model_sha256`, `backend` and `harness` are additions beyond the shared schema;
+`summarize_results.py` ignores unknown keys. `harness` carries the methodology
+notes for each metric, so a record explains how its own figures were produced.
+
+`device` names the specific model rather than the device family, derived from
+`hw.machine` — see `DeviceInfo.swift`.

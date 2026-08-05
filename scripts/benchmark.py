@@ -10,7 +10,7 @@ Measures, for a single GGUF model:
 
 Writes one JSON record to results/<tag>.json. The --tag and --device flags exist
 so results from different models and different hardware never get conflated --
-per the project plan, only iPhone 17 Pro Max (and optionally iPhone 12) runs are
+per docs/METHODOLOGY.md, only iPhone 17 Pro Max (and optionally iPhone 12) runs are
 the numbers that go in the submission; Mac mini runs are dev/sanity-check only.
 """
 import argparse

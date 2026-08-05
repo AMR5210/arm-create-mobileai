@@ -70,7 +70,7 @@ def affine_fake_quant(weight: torch.Tensor, bits: int, group_size: int) -> torch
 @torch.no_grad()
 def round_trip_init(weight: torch.Tensor, bits: int, group_size: int) -> torch.Tensor:
     """One-shot PTQ-style rounding used only to *initialize* QAT training
-    (the plan's progressive FP16 -> INT4 -> INT2 route: initialize the
+    (the progressive FP16 -> INT4 -> INT2 route: initialize the
     trainable shadow weights from an INT4 rounding before fine-tuning them
     toward a 2-bit target), not part of the training graph.
     """

@@ -10,7 +10,7 @@ downloadable `.gguf` files: `qwen3-0.6b-fp16.gguf`, `qwen3-0.6b-ptq-q2_k.gguf`,
 you an x86_64 Linux VM with a GPU (typically a T4 on the free tier) — nothing
 like an iPhone's Arm CPU. Running `scripts/benchmark.py` there would produce
 numbers that are meaningless for the submission (Section 5 of
-`docs/PROJECT_PLAN.md`: final numbers must come from the iPhone 17 Pro Max).
+`docs/METHODOLOGY.md`: final numbers must come from the iPhone 17 Pro Max).
 Colab's job here is purely to produce the three `.gguf` files; benchmarking
 those files still happens later on the Mac mini (dev/sanity-check) and
 iPhone (reported numbers).
@@ -124,7 +124,7 @@ files.download('models/qwen3-0.6b-qat-q2_k.gguf')
   `--batch-size 4 --max-length 512`, but if you hit a CUDA OOM, lower
   `--batch-size` first (no code changes needed, both are existing CLI flags).
 - **Thermal/quota throttling isn't a concern here** (that's a mobile-hardware
-  issue, Section 7 of `docs/IOS_BENCHMARK_HARNESS_SPEC.md`) — Colab's own
+  issue, see `ios/README.md`) — Colab's own
   limit is session/usage quotas on the free tier, which `--save-every`
   mitigates but doesn't eliminate. Don't leave a run going unattended for
   hours expecting it to definitely finish.

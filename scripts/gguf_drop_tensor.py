@@ -7,7 +7,7 @@ Used to make the PTQ baseline structurally match the QAT export. Qwen3-0.6B sets
 exporter omits it and relies on llama.cpp's tied fallback, so without this step
 the two 2-bit models differ by one 311 MB tensor and ~0.16 B reported parameters
 -- which would undercut the "same footprint, only quality differs" premise of
-Claim B in docs/PROJECT_PLAN.md.
+Claim B in docs/METHODOLOGY.md.
 
 `llama-quantize` can change tensor types but not remove a tensor, so dropping one
 requires a separate rewrite pass. Removing a byte-identical duplicate is
