@@ -4,6 +4,15 @@ Quantization-aware training takes Qwen3-0.6B to 2 bits and recovers **12× lower
 perplexity than post-training quantization at the same footprint**, measured on an
 iPhone 17 Pro Max.
 
+Good language models are large, and running one on a phone means shrinking it
+drastically. Naive post-training quantization to 2 bits causes a severe and
+well-documented quality collapse — here it takes WikiText-2 perplexity from 21.4 to
+220.9. Quantization-aware training is supposed to recover most of that by letting
+the model adapt to quantization during training rather than having it imposed
+afterwards, but the claim is usually asserted rather than measured end-to-end on the
+hardware that would run it. This project measures it directly: one base model, one
+final on-device format, and the quantization method as the only variable.
+
 Built for the Arm Create: Mobile AI Challenge (Track 3).
 
 | Variant | Disk | Peak RAM | Prompt tok/s | Gen tok/s | WikiText-2 ppl |
@@ -52,6 +61,18 @@ Off-domain check: on C4, which contributes nothing to the training blend, QAT
 measures 32.25 against PTQ's 279.30 — an 8.7× gap rather than the 12.0× seen on
 WikiText-2. Part of the WikiText-2 margin is domain alignment, and
 [`results/c4_perplexity.json`](results/c4_perplexity.json) exists to catch that.
+
+## Design choices
+
+| Choice | Over | Why |
+|---|---|---|
+| Custom Q2_K encoder (`qat/gguf_q2k.py`) | Writing fp16 and letting `llama-quantize` pack it | `llama-quantize` re-derives its own Q2_K parameters, so the deployed weights would not be the ones training optimized |
+| QAT group size 16 | The more common 32 | Q2_K's sub-blocks are 16 elements; matching them puts trained values on the deployment grid instead of requiring re-quantization at export |
+| Affine asymmetric fake-quant | ParetoQ's symmetric SEQ scheme | SEQ measured as a tie (CIs [26.378, 26.810] vs [26.686, 27.124]) and is sensitive to init mode; affine is simpler and has no init cliff |
+| CAKLD distillation objective | Sliced-Wasserstein hidden-state alignment | CAKLD 26.95 vs Wasserstein 27.40 at matched loss share, with quality degrading monotonically as Wasserstein weight rose |
+| F16 tied embeddings in the PTQ baseline | `llama-quantize`'s default Q2_K embedding plus untied duplicate | Matches the QAT export, so no embedding-precision advantage is credited to QAT training; also improved PTQ from 275.89 to 220.93 |
+| FineWeb blend at 0.5, WikiText-2 at 0.05 | WikiText-heavy blend at 0.5 | 26.95 → 18.49, and the off-domain C4 gain was larger (−42.4%) than the in-domain one (−31.4%), indicating generalization rather than domain alignment |
+| CPU backend (`n_gpu_layers = 0`) | llama.cpp's Metal default on iOS | Metal bypasses the CPU backend entirely, so an Arm-CPU figure has to come from the CPU path |
 
 ## Quickstart
 
@@ -102,6 +123,22 @@ To train rather than download, see [`docs/AMD_ROCM_SETUP.md`](docs/AMD_ROCM_SETU
 | `eval/data/` | Generated eval corpora (not committed) |
 
 ## How the QAT works
+
+```mermaid
+flowchart LR
+    HF["Qwen3-0.6B<br/>HF checkpoint"] --> FP16["fp16 GGUF<br/><i>convert_to_gguf.sh</i>"]
+    HF --> TRAIN["QAT fine-tune, GPU<br/><i>train_qat.py</i>"]
+    FP16 --> PTQ["Post-training quantize<br/><i>quantize_ptq.sh</i>"]
+    TRAIN --> ENC["Q2_K encode<br/><i>qat/gguf_q2k.py</i>"]
+    PTQ --> Q2K["GGUF Q2_K<br/>same runtime format"]
+    ENC --> Q2K
+    FP16 --> BENCH["On-device harness<br/><i>ios/LlamaBench</i>"]
+    Q2K --> BENCH
+    BENCH --> RES["results/&lt;tag&gt;.json"]
+```
+
+Both 2-bit branches converge on one runtime format, which is what makes Claim B
+measurable.
 
 Weights are fake-quantized per group with an affine min/max scheme and a
 straight-through estimator, using the full asymmetric integer range — at 2 bits,
@@ -158,7 +195,7 @@ Negative results are recorded with the same detail as positive ones, in
 
 | Tried | Result | Action |
 |---|---|---|
-| PTQ baseline with Q2_K embeddings | Gave QAT an advantage it had not earned — embeddings were never trained under fake-quant | Rebuilt PTQ with F16 tied embeddings. Made **PTQ 20% better** (275.89 → 220.91); the QAT result now stands against a stronger baseline |
+| PTQ baseline with Q2_K embeddings | Gave QAT an advantage it had not earned — embeddings were never trained under fake-quant | Rebuilt PTQ with F16 tied embeddings. Made **PTQ 20% better** (275.89 → 220.93); the QAT result now stands against a stronger baseline |
 | Sliced-Wasserstein distillation | Lost to CAKLD at matched loss share, 27.40 vs 26.95 | Closed. The first run was also confounded: `--distill-weight` is not comparable across loss types, and 0.5 gave Wasserstein 69–74% of total loss against CAKLD's 10–20% |
 | ParetoQ SEQ quantizer | Confidence intervals overlap — a tie, not a win | Reported as a tie. The real finding was init sensitivity: a 1.49× swing from init mode alone |
 | Progressive 4→2 bit annealing | No measurable effect | Confirmed with a dedicated control run, then disabled |
