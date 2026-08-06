@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Clones and builds llama.cpp. On Arm hosts (e.g. the Mac mini M4 dev machine),
-# enables Arm's KleidiAI-accelerated matmul kernels.
+# Clones and builds the pinned llama.cpp revision used for the recorded
+# remeasurements. On Arm hosts (e.g. the Mac mini M4 dev machine), enables Arm's
+# KleidiAI-accelerated matmul kernels.
 #
 # This builds a native binary for local development/iteration only. Cross-compiling
 # for iOS (needed for on-device iPhone benchmarks) is a separate step handled later.
@@ -9,14 +10,25 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLAMA_DIR="$ROOT_DIR/third_party/llama.cpp"
 BUILD_DIR="$LLAMA_DIR/build"
+LLAMA_CPP_COMMIT="000547513f1530346ecd163db8b3e13962949961"  # b10210
 
-if [ ! -d "$LLAMA_DIR" ]; then
+if [ -e "$LLAMA_DIR" ] && [ ! -d "$LLAMA_DIR/.git" ]; then
+  echo "ERROR: $LLAMA_DIR exists but is not a Git checkout." >&2
+  exit 1
+fi
+
+if [ ! -d "$LLAMA_DIR/.git" ]; then
   echo "==> Cloning llama.cpp"
   git clone https://github.com/ggml-org/llama.cpp "$LLAMA_DIR"
-else
-  echo "==> Updating existing llama.cpp checkout"
-  git -C "$LLAMA_DIR" pull --ff-only
 fi
+
+if ! git -C "$LLAMA_DIR" cat-file -e "${LLAMA_CPP_COMMIT}^{commit}" 2>/dev/null; then
+  echo "==> Fetching pinned llama.cpp revision"
+  git -C "$LLAMA_DIR" fetch origin
+fi
+
+echo "==> Checking out pinned llama.cpp revision $LLAMA_CPP_COMMIT (b10210)"
+git -C "$LLAMA_DIR" checkout --detach "$LLAMA_CPP_COMMIT"
 
 CMAKE_ARGS=(-DCMAKE_BUILD_TYPE=Release)
 
