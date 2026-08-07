@@ -15,7 +15,7 @@
     "perplexity_device": "CPU, 20 cores",
     "torch": "2.10.0+rocm7.2.4",
     "transformers": "5.14.1",
-    "repo_commit": "699d0ac",
+    "repo_commit": "908207c",
     "_repo_commit_note": "Latest code state. Individual rows were produced at whatever commit was current when they ran; rows carry a code_commit field where it differs materially (the SEQ and Wasserstein rows)."
   },
   "base_model": "Qwen/Qwen3-0.6B",
@@ -127,7 +127,7 @@
       "distill_weight": 0.05,
       "kd_share_of_total_loss": "13%",
       "bit_schedule": "anneal_4_to_2_over_150",
-      "code_commit": "699d0ac",
+      "code_commit": "908207c",
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "--distill-loss wasserstein --distill-weight 0.05 --sw-weight 0.1 --sw-projections 256 --wasserstein-layers 2 6 8 16 18 21 26 27 --init-mode ptq_q2k --wikitext-frac 0.5 --group-size 16, 9 skip-layers",
@@ -144,7 +144,7 @@
       "distill_weight": 0.1,
       "kd_share_of_total_loss": "31%",
       "bit_schedule": "anneal_4_to_2_over_150",
-      "code_commit": "699d0ac",
+      "code_commit": "908207c",
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "identical to qat_q2k_wasserstein_dw005 except --distill-weight 0.1",
@@ -161,7 +161,7 @@
       "distill_weight": 0.5,
       "kd_share_of_total_loss": "69-74%",
       "bit_schedule": "anneal_4_to_2_over_150",
-      "code_commit": "699d0ac",
+      "code_commit": "908207c",
       "format": "GGUF Q2_K (187 Q2_K / 9 F16 skip / 114 copied)",
       "size_bytes": 495193952,
       "config": "identical to qat_q2k_wasserstein_dw005 except --distill-weight 0.5",
@@ -219,8 +219,8 @@
       "measured": false,
       "format": "GGUF Q2_K (8 F16 skip-layers)",
       "size_bytes": 490733568,
-      "config": "CAKLD, roundtrip init, Alpaca only, 8 skip-layers; reported in commit 305836c",
-      "role": "Historical reference carried over from commit 305836c. Quoted, not reproduced on this box. Its exact flags are not recorded in the repo; distill-weight 0.5 is from operator recollection, not a committed config."
+      "config": "CAKLD, roundtrip init, Alpaca only, 8 skip-layers; reported in commit c926734",
+      "role": "Historical reference carried over from commit c926734. Quoted, not reproduced on this box. Its exact flags are not recorded in the repo; distill-weight 0.5 is from operator recollection, not a committed config."
     },
     {
       "id": "qat_q2k_fineweb_final",
@@ -325,7 +325,7 @@
       "run_health": "All four Wasserstein runs (100-step crash-check plus three 1000-step runs) completed with zero non-finite loss/gradient events and zero skipped updates. kd_loss started well above zero (22.95) and fell monotonically to 9.14, confirming the student was quantized and the objective was optimizing. Gradient norms at dw=0.5 were high (157 falling to 29, against ~10-50 for CAKLD), consistent with the loss-scale imbalance, and normalized at the lower weights."
     },
     "seq_alpha_positivity": {
-      "note": "Identified while verifying that SEQ's learnable alpha trains. Fixed in commit 6cd451e.",
+      "note": "Identified while verifying that SEQ's learnable alpha trains. Fixed in commit ea51fe2.",
       "observed": "After 1000 steps, 3 of 26,279,936 alpha scales had gone non-positive (min -3.0e-05). The count did not grow between step 100 and step 1000, and no run produced a NaN.",
       "why_it_matters": "alpha < 0 mirrors a group's quantization grid without raising an error; alpha == 0 makes the backward's W_Q/alpha term 0/0 = NaN, which the |u| < 1 indicator cannot mask because nan * 0 == nan.",
       "fix": "abs().clamp_min(_EPS) on alpha in seq_fake_quant -- an exact identity for every alpha > _EPS, so all measured SEQ results above remain reproducible from the fixed code (verified bit-identical forward for positive alpha).",

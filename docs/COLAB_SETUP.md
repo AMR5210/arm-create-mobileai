@@ -61,7 +61,7 @@ drive.mount('/content/drive')
 %cd /content/drive/MyDrive
 !git clone <your-repo-url> arm-create-mobileai
 %cd arm-create-mobileai
-!git checkout claude/project-implementation-p4rkuv
+!git checkout main
 ```
 
 ```bash

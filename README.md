@@ -24,6 +24,11 @@ differences disclosed below.
 
 Built for the Arm Create: Mobile AI Challenge (Track 3).
 
+The trained 2-bit checkpoint is published on Hugging Face at
+[**AMR5210/qwen3-0.6b-qat-q2k**](https://huggingface.co/AMR5210/qwen3-0.6b-qat-q2k),
+so the comparison in this repository reproduces without retraining. See
+[Quick start](#quick-start) for the download.
+
 ## Key results
 
 | Variant | File size (MB) ↓ | Peak app RAM (MB) ↓ | Prompt processing (tok/s) ↑ | Generation (tok/s) ↑ | WikiText-2 perplexity ↓ |
@@ -55,11 +60,22 @@ against the desktop reference.
 
 <p align="center"><em>For the same prompt, FP16 and QAT return the matching answer while PTQ enters a repetitive output loop.</em></p>
 
+## Why this matters
+
+Private, offline AI on memory-constrained devices depends on quantization
+preserving usable behavior, not merely shrinking a model file. Here, naive 2-bit
+PTQ has a low footprint yet reaches 220.91 WikiText-2 perplexity and enters a
+repetitive output loop for the same prompt, making it unusable in practice. The
+reproducible on-device QAT result shows that training the model to adapt to
+quantization, not just quantizing it after the fact, is what makes a 2-bit
+deployment viable.
+
 ---
 
 ## Contents
 
 - [What this project measures](#what-this-project-measures)
+- [Why this matters](#why-this-matters)
 - [Quick start](#quick-start)
 - [How QAT works](#how-qat-works)
 - [Repository structure](#repository-structure)
@@ -104,6 +120,26 @@ WikiText-2 margin comes from domain alignment. The full off-domain results are i
 
 ## Quick start
 
+### Validate the QAT model in one command
+
+```bash
+./scripts/judge_demo.sh
+```
+
+[`scripts/judge_demo.sh`](scripts/judge_demo.sh) builds the pinned llama.cpp if it
+is not already built, downloads the QAT model only, verifies its SHA-256 against the
+published digest, and answers one prompt — printing the answer, this host's
+throughput, and the verified digest. It hard-fails if the digest does not match.
+Re-runs skip the build and the download; a warm run finishes in a few seconds.
+
+This uses the **desktop** llama.cpp build and runs on any Arm64 or x86_64 host. It
+needs no iPhone, no Xcode, and no code signing. The on-device figures in the results
+table above come from the separate harness in [`ios/`](ios/README.md), which does
+require all three, and the throughput the script prints is this host's — not the
+recorded iPhone number.
+
+### Full setup
+
 Desktop setup requires Bash, Python 3.10+, Git, `cmake`, and a C toolchain. QAT
 training additionally requires a GPU and several hours. The on-device workflow
 requires a Mac with Xcode, code signing, and an iPhone; see the
@@ -123,13 +159,29 @@ python scripts/download_model.py       # base model -> models/qwen3-0.6b-hf
 python scripts/prepare_eval_data.py    # WikiText-2 + C4 eval corpora
 ```
 
-The QAT checkpoint is published, so the comparison reproduces without retraining:
+The QAT checkpoint is published, so the comparison reproduces without retraining.
+The download needs no Hugging Face account, token, or CLI:
 
 ```bash
-huggingface-cli download AMR5210/qwen3-0.6b-qat-q2k \
-  fineweb-blend/qwen3-0.6b-qat-fineweb-blend-q2_k.gguf --local-dir models/
-mv models/fineweb-blend/qwen3-0.6b-qat-fineweb-blend-q2_k.gguf \
-  models/qwen3-0.6b-qat-q2_k.gguf
+mkdir -p models
+curl -L -o models/qwen3-0.6b-qat-q2_k.gguf \
+  https://huggingface.co/AMR5210/qwen3-0.6b-qat-q2k/resolve/main/fineweb-blend/qwen3-0.6b-qat-fineweb-blend-q2_k.gguf
+```
+
+The `-o` path renames the file as it is written. This is deliberate, not a
+workaround: the published name identifies which recipe produced the file, while
+every script here and the iOS app read one fixed path,
+`models/qwen3-0.6b-qat-q2_k.gguf`, whichever variant is current.
+
+Verify what landed on disk before using it. A filename is not an identity — a
+failed `curl -L` writes an HTML or JSON error body under the same `.gguf` name, and
+an earlier round of measurements in this project was invalidated by a same-named
+export:
+
+```bash
+shasum -a 256 models/qwen3-0.6b-qat-q2_k.gguf
+# expected: a861b8924a2b1881720d38123ec32aae7f99ac05732d819644a6584f3cc38fef
+
 python scripts/verify_model_signatures.py    # confirms all three files by SHA-256
 ```
 
@@ -287,6 +339,17 @@ and every result record embeds its model's hash.
   default baseline raises SIGILL on A14.
 - **No live demo.** The app needs code signing and 2.4 GB of model files, so the
   screenshot and [`results/`](results/) are the evidence.
+- **The training blend includes Alpaca, which is CC BY-NC 4.0 — non-commercial.**
+  Whether that restriction reaches model weights trained on the data is unsettled.
+  Stanford's own Alpaca release took the position that it does: their notice states
+  the dataset allows only non-commercial use, and that models trained on it should
+  not be used outside research purposes. One part of their reasoning does not carry
+  over — their base model was LLaMA, whose license was itself non-commercial, while
+  this project's base is Qwen3-0.6B under Apache-2.0. The data question remains open
+  regardless, and the published GGUF's Apache-2.0 label, inherited from Qwen3-0.6B,
+  does not resolve it. Anyone considering commercial use should evaluate this
+  independently or consult counsel. Full license inventory in
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## References
 
@@ -304,4 +367,12 @@ checks size, tensor mix, skip-layer set and SHA-256 for all three variants.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The **code** in this repository is MIT — see [LICENSE](LICENSE).
+
+The **published model artifact** is Apache-2.0, inherited from Qwen3-0.6B. These are
+different licenses covering different things: the MIT grant does not extend to the
+weights.
+
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every external model, dataset,
+and library with its verified license, and flags one constraint worth knowing before
+any commercial use — the training blend includes Alpaca, which is CC BY-NC 4.0.

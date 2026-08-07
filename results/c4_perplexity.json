@@ -15,7 +15,7 @@
   },
   "environment": {
     "perplexity_device": "CPU, 20 cores",
-    "repo_commit": "3e47d9f"
+    "repo_commit": "eeafced"
   },
   "base_model": "Qwen/Qwen3-0.6B",
   "results": [

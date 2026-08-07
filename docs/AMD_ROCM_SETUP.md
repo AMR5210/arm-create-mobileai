@@ -68,7 +68,7 @@ this point will silently run on CPU otherwise.
 ## Step 3 — clone the repo and run the same pipeline as Colab
 
 From here it's identical to `docs/COLAB_SETUP.md` steps 3 onward — clone the
-repo, checkout `claude/project-implementation-p4rkuv`, then:
+repo, checkout `main`, then:
 
 ```bash
 scripts/build_llama_cpp.sh          # CPU-only build, no ROCm needed for this part

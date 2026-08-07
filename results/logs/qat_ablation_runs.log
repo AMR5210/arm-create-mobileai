@@ -1,4 +1,4 @@
-WikiText-2 QAT ablation runs -- Qwen3-0.6B, MI300X, repo 1749dfe, 2026-08-01
+WikiText-2 QAT ablation runs -- Qwen3-0.6B, MI300X, repo 449f896, 2026-08-01
 Distilled from the raw run logs (config + every-50-step lines only).
 Final perplexities: results/wikitext2_perplexity.json
 
@@ -154,7 +154,7 @@ step 1000/1000  loss=2.7472  hard_loss=2.6246  kd_loss=0.2452  wikitext2_ppl=11.
 ==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
 
 ================================================================
-== SEQ / bit-annealing experiments (appended 2026-08-01, repo 6cd451e)
+== SEQ / bit-annealing experiments (appended 2026-08-01, repo ea51fe2)
 ================================================================
 ---------------- affine_noanneal (annealing control, fixed 2-bit) ----------------
 ==> Loading 2000 examples from tatsu-lab/alpaca
@@ -262,7 +262,7 @@ step 1000/1000  loss=3.7287  hard_loss=3.2966  kd_loss=0.8643  wikitext2_ppl=20.
 ==> Done. Next: scripts/export_qat_gguf.sh to convert this checkpoint into GGUF Q2_K for the final benchmark against ptq-2bit.
 
 ================================================================
-== Wasserstein hidden-state distillation sweep (repo 699d0ac)
+== Wasserstein hidden-state distillation sweep (repo 908207c)
 ================================================================
 ---------------- wasserstein distill-weight 0.5 (kd share 69-74%) ----------------
 ==> Loading 2000 examples from tatsu-lab/alpaca
@@ -374,7 +374,7 @@ step 1000/1000  loss=4.1644  hard_loss=2.8892  kd_loss=12.7526  wikitext2_ppl=20
 
 
 ================================================================
-== Batch-24/lr-2.5e-5 scale-up: wikitext-frac 0.05 + FineWeb 0.5 blend (repo ed13658)
+== Batch-24/lr-2.5e-5 scale-up: wikitext-frac 0.05 + FineWeb 0.5 blend (repo c9d518b)
 == 48828 steps (~600M tokens), max-examples 44000, save-every 2500
 ================================================================
 ==> Loading base model from models/qwen3-0.6b-hf
