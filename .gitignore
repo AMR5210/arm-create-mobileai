@@ -1,6 +1,7 @@
-# Claude Code project state (settings.json is tracked project policy, not personal config)
 .claude/*
-!.claude/settings.json
+CLAUDE.md
+docs/DEVPOST_SUBMISSION.md
+docs/SUBMISSION_CHECKLIST.md
 
 # Python
 __pycache__/
