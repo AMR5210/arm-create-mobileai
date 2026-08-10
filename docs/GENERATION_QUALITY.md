@@ -189,11 +189,39 @@ diagnostics, and is not reported alongside perplexity.
 
 ## Follow-ups
 
-- **QAT verbosity and weak EOS.** Worth confirming the fine-tuning data terminated
-  examples with `<|im_end|>`; run-on output across all prompts is consistent with
-  that cause, as is the `Assistant:` prefix seen on the MCQ prompt.
+- **QAT verbosity and weak EOS are confirmed.** Alpaca responses append
+  `tokenizer.eos_token` in `qat/data.py`, so the issue is not a completely missing
+  EOS target. Truncation can still remove the final token, and the model may assign
+  it too little probability after quantization. On the Germany prompt, fp16 answers
+  once and stops while QAT gives the correct answer and then repeats.
+- **Training and inference use different instruction formats.** QAT instruction
+  examples use the Alpaca `### Instruction` / `### Response` format, while the
+  measured generation path uses Qwen3's chat template. Repeating the Germany test
+  with the Alpaca format preserved the correct first sentence but did not restore
+  clean termination, so the mismatch is a possible contributor rather than the
+  complete explanation.
+- **Decoding workarounds contain the symptom but do not repair the model.** A
+  `--repeat-penalty 1.1` diagnostic removed exact repetition but caused topic drift.
+  Stopping on the first generated newline returned one clean sentence and is
+  suitable only for a deliberately one-line demo.
 - **QAT does not honour `enable_thinking=false`**, emitting a reasoning preamble
   regardless.
+
+### Proposed remediation
+
+1. Format instruction examples with the same Qwen3 chat template used during
+   inference instead of the separate Alpaca text template.
+2. Reserve room for the assistant EOS token during truncation and verify that
+   every retained instruction example ends with it.
+3. Measure EOS probability, clean termination rate and repetition rate on a fixed
+   prompt suite, with fp16 as the control.
+4. Retrain QAT with the corrected formatting and termination handling, then
+   compare it against the current checkpoint.
+5. Export the new GGUF and rerun model-signature, perplexity, generation and
+   physical-device validation before replacing the published artifact.
+
+First-newline stopping may be used to contain output in the one-sentence judge
+demo, but it is not evidence that the underlying generation behavior is fixed.
 
 ## On-device figures
 

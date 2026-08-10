@@ -10,6 +10,8 @@
 ![Swift](https://img.shields.io/badge/Swift-SwiftUI-F05138?style=flat&logo=swift&logoColor=white)
 ![iOS](https://img.shields.io/badge/iOS-on--device-000000?style=flat&logo=apple&logoColor=white)
 
+## Project overview
+
 Running a language model on a phone requires substantial compression. In this
 experiment, naive 2-bit PTQ raises WikiText-2 perplexity from 21.4 to 220.9. QAT
 is intended to recover that lost quality by allowing the model to adapt to
@@ -22,14 +24,40 @@ and related work listed in [References](#references). The comparison uses one
 base model and one on-device runtime, with the remaining precision-layout
 differences disclosed below.
 
-Built for the Arm Create: Mobile AI Challenge (Track 3).
+Built for the Arm Create: AI Optimization Challenge, Track 3: Mobile AI.
 
-The trained 2-bit checkpoint is published on Hugging Face at
+The final QAT-derived Q2_K GGUF is published on Hugging Face at
 [**AMR5210/qwen3-0.6b-qat-q2k**](https://huggingface.co/AMR5210/qwen3-0.6b-qat-q2k),
-so the comparison in this repository reproduces without retraining. See
-[Quick start](#quick-start) for the download.
+so judges can validate the deployed model without repeating the training run.
+See [Quick start](#quick-start) for the download.
 
-## Key results
+## Demo video
+
+<p align="center">
+  <a href="https://youtu.be/WV8K-tVxe4o">
+    <img src="docs/images/youtube-thumbnail.png" width="900" alt="2-bit QAT on-device LLM inference demo on an iPhone 17 Pro Max" />
+  </a>
+</p>
+
+Watch the FP16, PTQ, and QAT variants run on an iPhone 17 Pro Max, including
+the same-prompt comparison and measured results.
+
+## Contents
+
+- [Demo video](#demo-video)
+- [Results on iPhone 17 Pro Max](#results-on-iphone-17-pro-max)
+- [Why this matters](#why-this-matters)
+- [What is being compared](#what-is-being-compared)
+- [Quick start](#quick-start)
+- [Project architecture and QAT design](#project-architecture-and-qat-design)
+- [Repository structure](#repository-structure)
+- [Reproduction paths](#reproduction-paths)
+- [Key experimental and implementation decisions](#key-experimental-and-implementation-decisions)
+- [Benchmark methodology and validation](#benchmark-methodology-and-validation)
+- [Experiments that did not improve results](#experiments-that-did-not-improve-results)
+- [Limitations](#limitations)
+
+## Results on iPhone 17 Pro Max
 
 | Variant | File size (MB) ↓ | Peak app RAM (MB) ↓ | Prompt processing (tok/s) ↑ | Generation (tok/s) ↑ | WikiText-2 perplexity ↓ |
 |---|---:|---:|---:|---:|---:|
@@ -42,6 +70,8 @@ hashes are available in [`results/`](results/). Rebuild this table from the
 checked-in records with
 `python scripts/summarize_results.py`.
 
+### How to interpret these results
+
 **FP16 footprint caveat:** the reported 1509.3 MB FP16 artifact includes a
 311.2 MB byte-identical duplicate `output.weight` tensor. The two quantized
 artifacts use tied embeddings and do not carry that duplicate. It contributes to
@@ -52,7 +82,7 @@ The on-device perplexity figures reproduce llama.cpp's own `llama-perplexity` to
 within **0.011%** on all three variants, validating the on-device implementation
 against the desktop reference.
 
-### On-device comparison
+### Same-prompt output comparison
 
 <p align="center">
   <img src="docs/images/compare-tab.jpeg" width="280" alt="Compare tab on iPhone showing matching FP16 and QAT answers while PTQ produces repetitive output" />
@@ -70,32 +100,17 @@ reproducible on-device QAT result shows that training the model to adapt to
 quantization, not just quantizing it after the fact, is what makes a 2-bit
 deployment viable.
 
----
-
-## Contents
-
-- [What this project measures](#what-this-project-measures)
-- [Why this matters](#why-this-matters)
-- [Quick start](#quick-start)
-- [How QAT works](#how-qat-works)
-- [Repository structure](#repository-structure)
-- [Reproducing the measurements](#reproducing-the-measurements)
-- [Key experimental and implementation decisions](#key-experimental-and-implementation-decisions)
-- [Benchmark methodology and validation](#benchmark-methodology-and-validation)
-- [Experiments that did not improve results](#experiments-that-did-not-improve-results)
-- [Limitations](#limitations)
-
-## What this project measures
+## What is being compared
 
 Two claims, measured separately (full definitions in
 [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md)):
 
-- **Claim A — 2-bit vs FP16.** A size and speed win in the measured artifacts:
-  3.1× smaller on disk, 1.9× less RAM, and 1.4× faster generation. The disk
+- **Claim A — QAT 2-bit vs FP16.** A size and speed win in the measured artifacts:
+  3.05× smaller on disk, 1.94× less RAM, and 1.42× faster generation. The disk
   and RAM ratios are not normalized for tied embeddings: the FP16 artifact
   contains a 311.2 MB duplicate `output.weight` tensor that neither 2-bit artifact
-  carries. Either quantization method delivers the measured gain, so it says
-  nothing about QAT specifically.
+  carries. PTQ delivers similar footprint and speed gains, so this claim does not
+  establish an effect from QAT specifically.
 - **Claim B — 2-bit QAT vs 2-bit PTQ.** A quality comparison at the same nominal
   bit width and a closely matched total footprint, rather than a tensor-for-tensor
   identical comparison.
@@ -112,10 +127,12 @@ uses 1.5% more peak app RAM. Claim B is therefore closely footprint-matched, not
 a training-only ablation. The exact tensor inventories and this known divergence
 are recorded in [`scripts/model_signatures.json`](scripts/model_signatures.json).
 
-On the off-domain C4 dataset, which contributes nothing to the training blend,
-QAT measures 32.25 perplexity against PTQ's 279.30. The resulting 8.7× gap is
-smaller than the 12.0× measured on WikiText-2, suggesting that part of the
-WikiText-2 margin comes from domain alignment. The full off-domain results are in
+In separate desktop llama.cpp `llama-perplexity` evaluations on the off-domain
+C4 dataset, which contributes nothing to the training blend, QAT measures 32.25
+perplexity against PTQ's 279.30. These are desktop results, not measurements from
+the physical iPhone. The resulting 8.7× gap is smaller than the 12.0× measured on
+WikiText-2, suggesting that part of the WikiText-2 margin comes from domain
+alignment. The full off-domain results are in
 [`results/c4_perplexity.json`](results/c4_perplexity.json).
 
 ## Quick start
@@ -125,6 +142,20 @@ WikiText-2 margin comes from domain alignment. The full off-domain results are i
 ```bash
 ./scripts/judge_demo.sh
 ```
+
+To try a different prompt, pass it as a quoted argument; omitting it runs the
+fixed validation prompt shown by the script:
+
+```bash
+./scripts/judge_demo.sh "Explain why on-device AI can improve privacy."
+```
+
+Custom responses are limited to 64 generated tokens and may end sooner if the
+model completes its answer.
+
+On a clean checkout, this path requires Bash, Git, CMake, a C/C++ toolchain,
+`curl`, and either `shasum` or `sha256sum`, plus internet access to fetch
+llama.cpp and the model.
 
 [`scripts/judge_demo.sh`](scripts/judge_demo.sh) builds the pinned llama.cpp if it
 is not already built, downloads the QAT model only, verifies its SHA-256 against the
@@ -138,12 +169,14 @@ table above come from the separate harness in [`ios/`](ios/README.md), which doe
 require all three, and the throughput the script prints is this host's — not the
 recorded iPhone number.
 
-### Full setup
+### Full reproduction setup
 
 Desktop setup requires Bash, Python 3.10+, Git, `cmake`, and a C toolchain. QAT
 training additionally requires a GPU and several hours. The on-device workflow
 requires a Mac with Xcode, code signing, and an iPhone; see the
 [`ios/` guide](ios/README.md).
+
+#### Build the FP16 and PTQ baselines
 
 `scripts/build_llama_cpp.sh` checks out llama.cpp build `b10210` at commit
 `000547513f1530346ecd163db8b3e13962949961`, the revision used for the final
@@ -159,8 +192,11 @@ python scripts/download_model.py       # base model -> models/qwen3-0.6b-hf
 python scripts/prepare_eval_data.py    # WikiText-2 + C4 eval corpora
 ```
 
-The QAT checkpoint is published, so the comparison reproduces without retraining.
-The download needs no Hugging Face account, token, or CLI:
+#### Download the verified QAT deployment model
+
+The final QAT-derived GGUF is published, so model validation and comparison do
+not require retraining. The download needs no Hugging Face account, token, or
+CLI:
 
 ```bash
 mkdir -p models
@@ -172,6 +208,8 @@ The `-o` path renames the file as it is written. This is deliberate, not a
 workaround: the published name identifies which recipe produced the file, while
 every script here and the iOS app read one fixed path,
 `models/qwen3-0.6b-qat-q2_k.gguf`, whichever variant is current.
+
+#### Verify model identities
 
 Verify what landed on disk before using it. A filename is not an identity — a
 failed `curl -L` writes an HTML or JSON error body under the same `.gguf` name, and
@@ -185,6 +223,8 @@ shasum -a 256 models/qwen3-0.6b-qat-q2_k.gguf
 python scripts/verify_model_signatures.py    # confirms all three files by SHA-256
 ```
 
+#### Compare generated outputs
+
 Generate outputs for the same prompt across all three variants:
 
 ```bash
@@ -193,24 +233,38 @@ Generate outputs for the same prompt across all three variants:
 
 The generated comparisons are written to `results/generation_compare/`.
 
-## How QAT works
+## Project architecture and QAT design
+
+### End-to-end evaluation pipeline
 
 ```mermaid
-flowchart LR
-    HF["Qwen3-0.6B<br/>HF checkpoint"] --> FP16["FP16 GGUF<br/><i>convert_to_gguf.sh</i>"]
-    HF --> TRAIN["QAT fine-tune, GPU<br/><i>train_qat.py</i>"]
-    FP16 --> PTQ["Post-training quantize<br/><i>quantize_ptq.sh</i>"]
-    TRAIN --> ENC["Q2_K encode<br/><i>qat/gguf_q2k.py</i>"]
-    PTQ --> PTQ_GGUF["GGUF<br/>Q2_K + Q3_K tensor mix"]
-    ENC --> QAT_GGUF["GGUF<br/>Q2_K + 9 F16 layers"]
-    FP16 --> BENCH["On-device harness<br/><i>ios/LlamaBench</i>"]
+flowchart TB
+    HF["Qwen3-0.6B<br/>Hugging Face checkpoint"]
+    DATA["Training blend<br/>Alpaca + WikiText-2 + FineWeb"]
+
+    HF --> FP16["FP16 GGUF<br/><i>convert_to_gguf.sh</i>"]
+    FP16 --> PTQ["Post-training quantization<br/><i>quantize_ptq.sh</i>"]
+    PTQ --> PTQ_GGUF["PTQ GGUF<br/>Q2_K + Q3_K body<br/>F16 tied embedding"]
+
+    HF --> TEACHER["Frozen FP16 teacher"]
+    HF --> INIT["Q2_K round-trip<br/>dequantized student initialization"]
+    DATA --> TRAIN["QAT student, GPU<br/>affine fake quantization"]
+    INIT --> TRAIN
+    TEACHER -->|CAKLD distillation| TRAIN
+    TRAIN --> CHECKPOINT["QAT-trained<br/>Hugging Face checkpoint"]
+    CHECKPOINT --> EXPORT["Direct Q2_K export<br/><i>export_qat_gguf.py + qat/gguf_q2k.py</i>"]
+    EXPORT --> QAT_GGUF["QAT GGUF<br/>187 Q2_K tensors<br/>9 F16 skip tensors + F16 embedding"]
+
+    FP16 --> BENCH["Physical-iPhone harness<br/><i>ios/LlamaBench</i>"]
     PTQ_GGUF --> BENCH
     QAT_GGUF --> BENCH
-    BENCH --> RES["results/&lt;tag&gt;.json"]
+    BENCH --> RES["Hash-bound records<br/><i>results/*.json</i>"]
 ```
 
 Both 2-bit branches produce GGUF artifacts with closely matched total footprints,
 but their tensor-type mixes remain different as detailed in Claim B above.
+
+### QAT configuration used in this project
 
 Weights are fake-quantized per group with an affine min/max scheme and a
 straight-through estimator, using the full asymmetric integer range — at 2 bits,
@@ -249,7 +303,9 @@ byte-layout errors independently of quantization quality.
 | `docs/` | Methodology, generation-quality findings, training-environment setup |
 | `eval/data/` | Generated evaluation corpora (not committed) |
 
-## Reproducing the measurements
+## Reproduction paths
+
+### Desktop benchmark
 
 Run the desktop benchmark for a model with:
 
@@ -258,8 +314,17 @@ python scripts/benchmark.py --tag ptq-2bit --device "<host>" \
   --model models/qwen3-0.6b-ptq-q2_k.gguf
 ```
 
-See [`ios/README.md`](ios/README.md) for the on-device benchmark harness. To train
-rather than download the QAT checkpoint, follow
+The desktop harness records model identity, perplexity, throughput, memory, and
+the host description in a per-variant JSON file under [`results/`](results/).
+
+### Physical-iPhone benchmark
+
+See [`ios/README.md`](ios/README.md) for the physical-device harness, framework
+build, model staging, signing, and benchmark procedure used for the results table.
+
+### Optional QAT retraining
+
+To train rather than download the published QAT deployment model, follow
 [`docs/AMD_ROCM_SETUP.md`](docs/AMD_ROCM_SETUP.md) or
 [`docs/COLAB_SETUP.md`](docs/COLAB_SETUP.md), then run
 `python scripts/train_qat.py --help` for the available training options.
@@ -329,16 +394,21 @@ and every result record embeds its model's hash.
 - **The FP16 footprint is not tied-embedding-normalized.** Its 1509.3 MB file
   contains a 311.2 MB byte-identical `output.weight` duplicate that the tied PTQ
   and QAT artifacts omit, inflating both its disk and peak RAM measurements. The
-  reported 3.1× disk and 1.9× RAM reductions therefore compare the measured
-  artifacts, not otherwise identical tensor structures.
+  reported 3.05× disk and 1.94× RAM reductions for QAT therefore compare the
+  measured artifacts, not otherwise identical tensor structures.
 - **Footprint parity is close, not exact**: 3.2% disk, 1.5% RAM.
+- **QAT does not fully match FP16 generation behavior.** It preserves
+  substantially better quality than PTQ, but on some prompts it answers correctly
+  and then repeats or fails to terminate cleanly. Detailed findings and follow-up
+  work are recorded in [`docs/GENERATION_QUALITY.md`](docs/GENERATION_QUALITY.md).
 - **KleidiAI contributes nothing to the 2-bit path.** Its microkernels target
   int4/int8; `Q2_K` matmuls run on stock ggml CPU kernels.
 - **One base model, one device.** Qwen3-0.6B on A19 Pro. An iPhone 12
   cross-generation run needs a second framework build at `armv8.2-a`, since the
   default baseline raises SIGILL on A14.
-- **No live demo.** The app needs code signing and 2.4 GB of model files, so the
-  screenshot and [`results/`](results/) are the evidence.
+- **No distributable iOS build.** The app requires code signing and about 2.5 GB
+  of model files. Judges can use the demo video, screenshot, result records, and
+  desktop validation path without installing the app.
 - **The training blend includes Alpaca, which is CC BY-NC 4.0 — non-commercial.**
   Whether that restriction reaches model weights trained on the data is unsettled.
   Stanford's own Alpaca release took the position that it does: their notice states
@@ -358,12 +428,6 @@ and every result record embeds its model's hash.
 - Chen et al., [*EfficientQAT: Efficient Quantization-Aware Training for Large Language Models*](https://arxiv.org/abs/2407.11062) (2024).
 - Du et al., [*BitDistiller: Unleashing the Potential of Sub-4-Bit LLMs via Self-Distillation*](https://arxiv.org/abs/2402.10631) (2024).
 - Liu et al., [*ParetoQ: Scaling Laws in Extremely Low-bit LLM Quantization*](https://arxiv.org/abs/2502.02631) (2025).
-
-## Contributing
-
-Pull requests welcome. For any change touching the models or the export path,
-`python scripts/verify_model_signatures.py` should pass before and after — it
-checks size, tensor mix, skip-layer set and SHA-256 for all three variants.
 
 ## License
 

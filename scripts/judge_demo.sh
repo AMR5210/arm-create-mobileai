@@ -24,6 +24,7 @@
 # a clean checkout spends several minutes compiling llama.cpp.
 #
 # Usage:  ./scripts/judge_demo.sh
+#         ./scripts/judge_demo.sh "Your prompt"
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,7 +38,7 @@ LOG="$ROOT_DIR/results/judge_demo.log"
 EXPECTED_SHA="a861b8924a2b1881720d38123ec32aae7f99ac05732d819644a6584f3cc38fef"
 MODEL_URL="https://huggingface.co/AMR5210/qwen3-0.6b-qat-q2k/resolve/main/fineweb-blend/qwen3-0.6b-qat-fineweb-blend-q2_k.gguf"
 
-PROMPT="What is the capital of France? Answer in one sentence."
+PROMPT="${1:-What is the capital of France? Answer in one sentence.}"
 N_PREDICT=64
 
 RULE="------------------------------------------------------------------"

@@ -73,8 +73,8 @@ figure.
 
 | Hardware | Role |
 |---|---|
-| **iPhone 17 Pro Max (A19 Pro)** | Primary benchmark device. All reported numbers come from here. |
-| **Mac mini (M4)** | Development and validation only. Never a reported benchmark device. |
+| **iPhone 17 Pro Max (A19 Pro)** | Primary physical-device benchmark. Reported file size, peak app RAM, throughput, and on-device WikiText-2 figures come from here. |
+| **CPU evaluation hosts, including the recorded 20-core host and Mac mini (M4)** | Separate llama.cpp reference evaluation and development environments. Reported C4 perplexity and desktop WikiText-2 reference figures come from these hosts; environment and harness details are recorded in the result JSON files. |
 | **iPhone 12 (A14)** | Optional cross-generation comparison. Requires a separate framework build; see below. |
 | **Cloud GPU (AMD MI300X)** | QAT fine-tuning. See `docs/AMD_ROCM_SETUP.md`. |
 
