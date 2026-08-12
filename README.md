@@ -34,7 +34,7 @@ See [Quick start](#quick-start) for the download.
 ## Demo video
 
 <p align="center">
-  <a href="https://youtu.be/WV8K-tVxe4o">
+  <a href="https://youtu.be/3NZp0hgWAfo">
     <img src="docs/images/youtube-thumbnail.png" width="900" alt="2-bit QAT on-device LLM inference demo on an iPhone 17 Pro Max" />
   </a>
 </p>
